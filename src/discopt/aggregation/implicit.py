@@ -32,6 +32,8 @@ import numpy as np
 from discopt.aggregation.derivatives import differentiate_expression
 from discopt.aggregation.recovery import evaluate_expression
 
+_INF = 1e19  # discopt uses +-9.999e19 as the unbounded sentinel
+
 _SINGULAR_TOL = 1e-12
 
 
@@ -284,6 +286,8 @@ class ImplicitElimination:
             implicit node's ``u_inputs``).
         eliminated: all eliminated (block) variable names.
         x0_value: the scalar initial guess used for each block's inner solve.
+        n_bound_inequalities: number of box->inequality constraints emitted on the
+            implicit-node components for bounded block variables (C4).
     """
 
     reduced_model: Any
@@ -291,6 +295,7 @@ class ImplicitElimination:
     block_inputs: list[list[str]]
     eliminated: list[str]
     x0_value: float
+    n_bound_inequalities: int = 0
 
     def recover(self, kept_values: dict[str, Any]) -> dict[str, Any]:
         """Full-space point: kept solution + block variables from the inner solves."""
@@ -366,6 +371,7 @@ def eliminate_implicit(
     elim_cids = {cid for ctx in contexts for cid in ctx[1]}
 
     reduced = dm.Model(f"{getattr(model, 'name', 'model')}_implicit")
+    orig_by_name = {v.name: v for v in model._variables}
     newvar_map: dict[str, Any] = {}
     for v in model._variables:
         if v.name in eliminated:
@@ -408,6 +414,25 @@ def eliminate_implicit(
 
     combined: dict[str, Any] = {**newvar_map, **replacement}
 
+    # Re-express each eliminated block variable's box as inequalities on its
+    # implicit-node component.  Dropping these (as this rewrite previously did)
+    # lets the reduced solve leave the block variables outside their bounds
+    # (C4).  No interval pruning here: an implicit-function component's range is
+    # not cheaply enclosable, so every finite bound is emitted (sound; at worst
+    # redundant).
+    n_bound_inequalities = 0
+    for name in sorted(eliminated):
+        v = orig_by_name[name]
+        lb = float(np.min(v.lb))
+        ub = float(np.max(v.ub))
+        comp = replacement[name]
+        if lb > -_INF:
+            reduced.subject_to(_make_constraint(comp - lb, ">="))
+            n_bound_inequalities += 1
+        if ub < _INF:
+            reduced.subject_to(_make_constraint(comp - ub, "<="))
+            n_bound_inequalities += 1
+
     for cid, c in enumerate(model._constraints):
         if cid in elim_cids:
             continue
@@ -428,6 +453,7 @@ def eliminate_implicit(
         block_inputs=block_inputs,
         eliminated=sorted(eliminated),
         x0_value=x0_value,
+        n_bound_inequalities=n_bound_inequalities,
     )
 
 
