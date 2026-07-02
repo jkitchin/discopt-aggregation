@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "discopt-aggregation"
+version = "0.2.0"
+description = "Variable aggregation (reduced-space presolve) plugin for discopt"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "EPL-2.0" }
+authors = [{ name = "John Kitchin" }]
+keywords = ["optimization", "nonlinear", "presolve", "aggregation", "discopt"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
+dependencies = [
+    "discopt>=0.5",
+    "numpy>=1.24",
+    "scipy>=1.10",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "ruff>=0.14", "mypy>=1.8"]
+
+[project.urls]
+Homepage = "https://github.com/jkitchin/discopt"
+Reference = "https://arxiv.org/abs/2502.13869"
+
+# discopt.aggregation is a PEP 420 namespace subpackage: it merges into the
+# ``discopt`` namespace at import time (discopt's __init__ extends its __path__).
+# We deliberately package only ``discopt.aggregation`` — never ``discopt`` — so
+# this distribution never shadows the base package.
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["discopt.aggregation*"]
+namespaces = true
+
+[tool.setuptools.package-data]
+"discopt.aggregation" = ["README.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-m 'not slow'"
+markers = [
+    "unit: pure-logic tests; no solver",
+    "smoke: one solve per code path on a tiny instance",
+    "slow: long-running tests",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+extend-select = ["I"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true

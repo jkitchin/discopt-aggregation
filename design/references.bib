@@ -1,0 +1,172 @@
+% Related work for the discopt-aggregation plugin.
+% Entries verified against arXiv abstract pages and publisher/OSTI records
+% (July 2026). Fields omitted rather than guessed where not confirmed.
+
+% --------------------------------------------------------------------------- %
+% Source paper                                                                 %
+% --------------------------------------------------------------------------- %
+@article{naik2025aggregation,
+  title   = {Variable aggregation for nonlinear optimization problems},
+  author  = {Naik, Sakshi and Biegler, Lorenz and Bent, Russell and Parker, Robert},
+  journal = {arXiv preprint arXiv:2502.13869},
+  year    = {2025},
+  doi     = {10.48550/arXiv.2502.13869},
+  url     = {https://arxiv.org/abs/2502.13869},
+}
+
+% --------------------------------------------------------------------------- %
+% Implicit / reduced-space elimination (basis for E5)                          %
+% --------------------------------------------------------------------------- %
+@article{parker2022implicit,
+  title   = {An implicit function formulation for optimization of discretized
+             index-1 differential algebraic systems},
+  author  = {Parker, Robert and Nicholson, Bethany L. and Siirola, John D. and
+             Laird, Carl D. and Biegler, Lorenz T.},
+  journal = {Computers \& Chemical Engineering},
+  volume  = {168},
+  pages   = {108042},
+  year    = {2022},
+  doi     = {10.1016/j.compchemeng.2022.108042},
+}
+
+@article{bugosen2023gibbs,
+  title   = {Process flowsheet optimization with surrogate and implicit
+             formulations of a {Gibbs} reactor},
+  author  = {Bugosen, Sergio I. and Laird, Carl D. and Parker, Robert B.},
+  journal = {arXiv preprint arXiv:2310.09307},
+  year    = {2023},
+  doi     = {10.48550/arXiv.2310.09307},
+  url     = {https://arxiv.org/abs/2310.09307},
+}
+
+% --------------------------------------------------------------------------- %
+% Block-triangular / Schur KKT (validates E6)                                  %
+% --------------------------------------------------------------------------- %
+@article{parker2026blocktriangular,
+  title   = {Exploiting block triangular submatrices in {KKT} systems},
+  author  = {Parker, Robert and Garcia, Manuel and Bent, Russell},
+  journal = {arXiv preprint arXiv:2602.17968},
+  year    = {2026},
+  doi     = {10.48550/arXiv.2602.17968},
+  url     = {https://arxiv.org/abs/2602.17968},
+}
+
+@article{regev2022hykkt,
+  title   = {{HyKKT}: a hybrid direct-iterative method for solving {KKT}
+             linear systems},
+  author  = {Regev, Shaked and Chiang, Nai-Yuan and Darve, Eric and
+             Petra, Cosmin G. and Saunders, Michael A. and
+             {\'S}wirydowicz, Kasia and Pele{\v s}, Slaven},
+  journal = {Optimization Methods and Software},
+  volume  = {38},
+  number  = {2},
+  pages   = {332--355},
+  year    = {2022},
+  doi     = {10.1080/10556788.2022.2124990},
+}
+
+@article{pacaud2024condensed,
+  title   = {Condensed interior-point methods: porting reduced-space
+             approaches on {GPU} hardware},
+  author  = {Pacaud, Fran{\c c}ois and Shin, Sungho and Schanen, Michel and
+             Maldonado, Daniel Adrian and Anitescu, Mihai},
+  journal = {arXiv preprint arXiv:2203.11875},
+  year    = {2022},
+  doi     = {10.48550/arXiv.2203.11875},
+  url     = {https://arxiv.org/abs/2203.11875},
+}
+
+@article{kardos2020reduced,
+  title   = {Reduced-space interior point methods in power grid problems},
+  author  = {Kardo{\v s}, Juraj and Kourounis, Drosos and Schenk, Olaf},
+  journal = {arXiv preprint arXiv:2001.10815},
+  year    = {2020},
+  doi     = {10.48550/arXiv.2001.10815},
+  url     = {https://arxiv.org/abs/2001.10815},
+}
+
+% --------------------------------------------------------------------------- %
+% Tearing / minimum feedback arc set (basis for E3)                            %
+% --------------------------------------------------------------------------- %
+@article{baharev2021mfas,
+  title   = {An exact method for the minimum feedback arc set problem},
+  author  = {Baharev, Ali and Schichl, Hermann and Neumaier, Arnold and
+             Achterberg, Tobias},
+  journal = {ACM Journal of Experimental Algorithmics},
+  volume  = {26},
+  year    = {2021},
+  doi     = {10.1145/3446429},
+}
+
+% --------------------------------------------------------------------------- %
+% Incidence / structural analysis foundations                                  %
+% --------------------------------------------------------------------------- %
+@article{parker2023dulmage,
+  title   = {Applications of the {Dulmage--Mendelsohn} decomposition for
+             debugging nonlinear optimization problems},
+  author  = {Parker, Robert and Nicholson, Bethany L. and Siirola, John D. and
+             Biegler, Lorenz T.},
+  journal = {Computers \& Chemical Engineering},
+  volume  = {178},
+  pages   = {108383},
+  year    = {2023},
+  doi     = {10.1016/j.compchemeng.2023.108383},
+}
+
+% --------------------------------------------------------------------------- %
+% MIP presolve / aggregation (numerical-safety context for F2)                 %
+% --------------------------------------------------------------------------- %
+@article{achterberg2020presolve,
+  title   = {Presolve reductions in mixed integer programming},
+  author  = {Achterberg, Tobias and Bixby, Robert E. and Gu, Zonghao and
+             Rothberg, Edward and Weninger, Dieter},
+  journal = {INFORMS Journal on Computing},
+  volume  = {32},
+  number  = {2},
+  pages   = {473--506},
+  year    = {2020},
+  doi     = {10.1287/ijoc.2018.0857},
+}
+
+@article{zhang2024aggregation,
+  title   = {A combined variable aggregation presolving technique for mixed
+             integer programming},
+  author  = {Zhang, H. and Yuan, J.},
+  journal = {Operations Research Letters},
+  volume  = {53},
+  pages   = {107074},
+  year    = {2024},
+  doi     = {10.1016/j.orl.2024.107074},
+}
+
+@article{gleixner2024papilo,
+  title   = {{PaPILO}: A parallel presolving library for integer and linear
+             programming with multiprecision support},
+  author  = {Gleixner, Ambros and Gottwald, Leona and Hoen, Alexander},
+  journal = {arXiv preprint arXiv:2206.10709},
+  year    = {2022},
+  doi     = {10.48550/arXiv.2206.10709},
+  url     = {https://arxiv.org/abs/2206.10709},
+}
+
+@article{vanderhulst2025impliedintegrality,
+  title   = {Implied integrality in mixed-integer optimization},
+  author  = {van der Hulst, Rolf and Walter, Matthias},
+  journal = {arXiv preprint arXiv:2504.07209},
+  year    = {2025},
+  doi     = {10.48550/arXiv.2504.07209},
+  url     = {https://arxiv.org/abs/2504.07209},
+}
+
+% --------------------------------------------------------------------------- %
+% Adjacent: variable reduction as preconditioning                              %
+% --------------------------------------------------------------------------- %
+@article{ciaramella2024preconditioning,
+  title   = {Variable reduction as a nonlinear preconditioning approach for
+             optimization problems},
+  author  = {Ciaramella, Gabriele and Vanzan, Tommaso},
+  journal = {arXiv preprint arXiv:2409.01032},
+  year    = {2024},
+  doi     = {10.48550/arXiv.2409.01032},
+  url     = {https://arxiv.org/abs/2409.01032},
+}
