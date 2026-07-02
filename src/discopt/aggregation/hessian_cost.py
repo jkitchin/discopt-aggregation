@@ -33,14 +33,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from discopt.modeling.core import (
-    BinaryOp,
-    FunctionCall,
-    IndexExpression,
-    SumExpression,
-    SumOverExpression,
-    UnaryOp,
-)
+from discopt.aggregation.exprwalk import child_exprs
 
 # Sentinel returned by tree-size when the (possibly exponential) count exceeds
 # the cap — so callers never hang enumerating an exponential tree.
@@ -48,20 +41,14 @@ TREE_SIZE_CAP = 5_000_000
 
 
 def _children(expr: Any) -> list:
-    """Immediate sub-expression operands of ``expr`` (empty for leaves)."""
-    if isinstance(expr, BinaryOp):
-        return [expr.left, expr.right]
-    if isinstance(expr, UnaryOp):
-        return [expr.operand]
-    if isinstance(expr, IndexExpression):
-        return [expr.base]
-    if isinstance(expr, SumExpression):
-        return [expr.operand]
-    if isinstance(expr, SumOverExpression):
-        return list(expr.terms)
-    if isinstance(expr, FunctionCall):
-        return list(expr.args)
-    return []
+    """Immediate sub-expression operands of ``expr`` (empty for leaves).
+
+    Delegates to the shared walker so opaque-but-walkable nodes (``CustomCall``,
+    ``MatMulExpression``) contribute to size/depth estimates; an unrecognised
+    node is treated as a leaf (conservative for a cost estimate).
+    """
+    kids = child_exprs(expr)
+    return [] if kids is None else kids
 
 
 def expression_tree_size(expr: Any, cap: int = TREE_SIZE_CAP) -> int:

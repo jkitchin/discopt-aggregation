@@ -33,9 +33,10 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-from discopt._jax.dependent_vars import _collect_var_names, _isolated_affine_coeff
+from discopt._jax.dependent_vars import _isolated_affine_coeff
 from discopt.modeling.core import Constraint, VarType
 
+from discopt.aggregation.exprwalk import collect_variable_names
 from discopt.aggregation.matching import BipartiteGraph
 
 
@@ -58,13 +59,21 @@ def all_vars(constraint: Constraint, candidate_names: set[str]) -> set[str]:
     """Candidate variables that participate in ``constraint`` (paper ``all_vars``).
 
     Returns the subset of ``candidate_names`` that appear anywhere in the
-    constraint body.  Returns an empty set for an opaque body that cannot be
-    analysed (the safe, conservative direction).
+    constraint body.  Variables inside opaque-but-walkable nodes (``CustomCall``,
+    ``MatMulExpression``) are counted — treating them as absent is the *unsafe*
+    direction for occurrence counting, since it would let such a variable be
+    eliminated via another constraint and leave a dangling reference.  A
+    genuinely unrecognised node raises :class:`NotImplementedError` (refuse
+    rather than risk a hidden variable).
     """
-    present = _collect_var_names(constraint.body)
-    if present is None:  # opaque node -> cannot analyse; contribute nothing
-        return set()
-    return present & candidate_names
+    names, analyzable = collect_variable_names(constraint.body)
+    if not analyzable:
+        raise NotImplementedError(
+            "aggregation cannot analyse an unrecognised expression node in a "
+            "constraint body; refusing rather than risk eliminating a variable "
+            "hidden inside it"
+        )
+    return names & candidate_names
 
 
 def linear_vars(
@@ -192,19 +201,32 @@ def build_incidence(
     )
 
     # Total degree of each candidate across every constraint and the objective.
+    # Walk with the deep collector so occurrences inside opaque-but-walkable
+    # nodes are counted, and an unrecognised node in *any* constraint/objective
+    # (not just equalities) refuses loudly rather than hiding a variable.
     var_degree = {name: 0 for name in candidate_names}
     for c in getattr(model, "_constraints", []):
         if isinstance(c, Constraint):
-            names = _collect_var_names(c.body)
-            if names:
-                for nm in names & candidate_names:
-                    var_degree[nm] += 1
-    obj = getattr(model, "_objective", None)
-    if obj is not None:
-        names = _collect_var_names(obj.expression)
-        if names:
+            names, analyzable = collect_variable_names(c.body)
+            if not analyzable:
+                raise NotImplementedError(
+                    "aggregation cannot analyse an unrecognised expression node "
+                    "in a constraint body; refusing rather than risk eliminating "
+                    "a variable hidden inside it"
+                )
             for nm in names & candidate_names:
                 var_degree[nm] += 1
+    obj = getattr(model, "_objective", None)
+    if obj is not None:
+        names, analyzable = collect_variable_names(obj.expression)
+        if not analyzable:
+            raise NotImplementedError(
+                "aggregation cannot analyse an unrecognised expression node in "
+                "the objective; refusing rather than risk eliminating a hidden "
+                "variable"
+            )
+        for nm in names & candidate_names:
+            var_degree[nm] += 1
     inc.var_degree = var_degree
 
     for cid, c in enumerate(getattr(model, "_constraints", [])):

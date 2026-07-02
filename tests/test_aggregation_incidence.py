@@ -152,3 +152,50 @@ def test_linear_graph_feeds_maximum_matching():
     assert len(match) == 2
     for cid, var in match.items():
         assert var in inc.constraint_linear_vars(cid)
+
+
+def test_customcall_blocks_dangling_reference():
+    """C3: a variable inside an opaque CustomCall is seen and substituted, not dropped.
+
+    ``y`` is defined by ``y == x^2+1`` and also appears inside a CustomCall in
+    another constraint.  Eliminating ``y`` must substitute its definition into
+    the CustomCall (no dangling reference to the deleted variable).
+    """
+    import discopt.modeling.core as core
+
+    from discopt.aggregation.api import aggregate
+    from discopt.aggregation.exprwalk import collect_variable_names
+
+    m = dm.Model("customcall")
+    x = m.continuous("x")
+    y = m.continuous("y")
+    z = m.continuous("z")
+    m.subject_to(y - (x**2 + 1.0) == 0.0)
+    m.subject_to(core.CustomCall(lambda a, b: a * b, y, z) - 4.0 == 0.0)
+    m.minimize(x**2 + z**2)
+    agg = aggregate(m, method="lm")
+    for c in agg.reduced_model._constraints:
+        names, analyzable = collect_variable_names(c.body)
+        assert analyzable
+        assert "y" not in names, "eliminated variable left dangling inside CustomCall"
+
+
+def test_unrecognised_node_refuses():
+    """C3: a genuinely unrecognised node makes incidence refuse rather than guess."""
+    import pytest
+
+    from discopt.aggregation.incidence import build_incidence
+
+    class _Weird:
+        # not an Expression the walker knows; child_exprs -> None
+        pass
+
+    m = dm.Model("weird")
+    x = m.continuous("x")
+    y = m.continuous("y")
+    m.subject_to(y - x == 0.0)
+    m.minimize(x**2)
+    # Inject an opaque body discopt's walker cannot analyse.
+    m._constraints.append(type(m._constraints[0])(_Weird(), "=="))
+    with pytest.raises(NotImplementedError):
+        build_incidence(m)

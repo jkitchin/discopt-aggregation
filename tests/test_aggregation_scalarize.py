@@ -186,3 +186,21 @@ def test_fully_determined_model_solves_without_variables():
     original = _chain_1d(4).solve()
     assert res.objective == pytest.approx(original.objective, abs=1e-5)
     assert np.allclose(np.asarray(res.x["x"]), np.asarray(original.x["x"]), atol=1e-4)
+
+
+def test_matmul_forces_abstention():
+    """C3: an array used whole via a MatMul must not be scalarized (would corrupt)."""
+    import discopt.modeling.core as core
+
+    from discopt.aggregation.scalarize import scalarize_model
+
+    m = dm.Model("matmul_abstain")
+    a = m.continuous("a", shape=(2,), lb=-5, ub=5)
+    b = m.continuous("b", shape=(2,), lb=-5, ub=5)
+    C = core.Constant(np.eye(2))
+    # a fully-indexed in one constraint, but used whole via C @ a in another
+    m.subject_to(a[0] - 1.0 == 0.0)
+    m.subject_to(core.MatMulExpression(C, a) - b == 0.0)
+    m.minimize(a[0] ** 2 + a[1] ** 2)
+    _, smap = scalarize_model(m)
+    assert "a" not in smap.scalarized, "array used in MatMul must abstain from scalarization"

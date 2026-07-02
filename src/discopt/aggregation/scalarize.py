@@ -41,7 +41,17 @@ from discopt.modeling.core import (
     VarType,
 )
 
+from discopt.aggregation.exprwalk import child_exprs
 from discopt.aggregation.transform import _make_constraint
+
+try:  # pragma: no cover - import shim
+    from discopt.modeling.core import CustomCall as _CustomCall
+except ImportError:  # pragma: no cover
+    _CustomCall = None  # type: ignore[assignment,misc]
+try:  # pragma: no cover - import shim
+    from discopt.modeling.core import MatMulExpression as _MatMul
+except ImportError:  # pragma: no cover
+    _MatMul = None  # type: ignore[assignment,misc]
 
 _DEFAULT_LIMIT = 10_000
 
@@ -111,20 +121,17 @@ def _find_abstentions(model: Any, candidates: dict[str, tuple[int, ...]]) -> set
             if expr.name in candidates:
                 abstain.add(expr.name)  # bare whole-array reference
             return
-        if isinstance(expr, BinaryOp):
-            scan(expr.left)
-            scan(expr.right)
-        elif isinstance(expr, UnaryOp):
-            scan(expr.operand)
-        elif isinstance(expr, FunctionCall):
-            for a in expr.args:
-                scan(a)
-        elif isinstance(expr, SumExpression):
-            scan(expr.operand)
-        elif isinstance(expr, SumOverExpression):
-            for t in expr.terms:
-                scan(t)
-        # Constant / Parameter / other leaf: nothing to scan.
+        kids = child_exprs(expr)
+        if kids is None:
+            # Unrecognised node: cannot certify how arrays are used inside it.
+            # Abstain for every candidate so nothing is scalarized under it.
+            abstain.update(candidates)
+            return
+        # Recognised interior node (incl. opaque-but-walkable CustomCall /
+        # MatMulExpression): recurse so a bare array reference buried inside is
+        # detected and its array abstained.
+        for k in kids:
+            scan(k)
 
     for c in model._constraints:
         if isinstance(c, Constraint):
@@ -163,6 +170,24 @@ def _rewrite(expr: Any, index_map: dict, var_map: dict[str, Expression]) -> Any:
         )
     if isinstance(expr, SumOverExpression):
         return SumOverExpression([_rewrite(t, index_map, var_map) for t in expr.terms])
+    if _CustomCall is not None and isinstance(expr, _CustomCall):
+        return _CustomCall(
+            expr.fn,
+            *(_rewrite(a, index_map, var_map) for a in expr.args),
+            name=getattr(expr, "name", None),
+        )
+    if _MatMul is not None and isinstance(expr, _MatMul):
+        return _MatMul(
+            _rewrite(expr.left, index_map, var_map),
+            _rewrite(expr.right, index_map, var_map),
+        )
+    if child_exprs(expr) is None and not isinstance(expr, (Constant,)):
+        # Unrecognised node: _find_abstentions already abstained every candidate
+        # array under it, so there is nothing to rewrite — but refuse rather than
+        # silently pass through a node that could hide a kept variable.
+        raise NotImplementedError(
+            f"scalarize cannot rewrite node of type {type(expr).__name__!r}"
+        )
     return expr
 
 

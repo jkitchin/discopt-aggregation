@@ -24,7 +24,6 @@ from typing import Any, cast
 
 import discopt.modeling as dm
 import numpy as np
-from discopt._jax.dependent_vars import _collect_var_names
 from discopt.modeling.core import (
     BinaryOp,
     Constant,
@@ -33,6 +32,7 @@ from discopt.modeling.core import (
     FunctionCall,
     IndexExpression,
     ObjectiveSense,
+    Parameter,
     SumExpression,
     SumOverExpression,
     UnaryOp,
@@ -40,8 +40,18 @@ from discopt.modeling.core import (
     VarType,
 )
 
+from discopt.aggregation.exprwalk import child_exprs, collect_variable_names
 from discopt.aggregation.recovery import RecoveryMap, interval_evaluate
 from discopt.aggregation.strategies import AggregationSet
+
+try:  # pragma: no cover - import shim
+    from discopt.modeling.core import CustomCall as _CustomCall
+except ImportError:  # pragma: no cover
+    _CustomCall = None  # type: ignore[assignment,misc]
+try:  # pragma: no cover - import shim
+    from discopt.modeling.core import MatMulExpression as _MatMul
+except ImportError:  # pragma: no cover
+    _MatMul = None  # type: ignore[assignment,misc]
 
 _INF = 1e19  # discopt uses +-9.999e19 as the unbounded sentinel
 
@@ -88,7 +98,29 @@ def substitute_expression(expr: Any, var_map: dict[str, Expression]) -> Any:
         if all(n is o for n, o in zip(new_terms, expr.terms)):
             return expr
         return SumOverExpression(new_terms)
-    # Parameter or any other leaf — pass through unchanged.
+    if _CustomCall is not None and isinstance(expr, _CustomCall):
+        # Opaque callable, but its arguments are ordinary expressions: rebuilding
+        # the call with substituted args preserves semantics (fn(sub(a), ...)).
+        new_args = tuple(substitute_expression(a, var_map) for a in expr.args)
+        if all(n is o for n, o in zip(new_args, expr.args)):
+            return expr
+        return _CustomCall(expr.fn, *new_args, name=getattr(expr, "name", None))
+    if _MatMul is not None and isinstance(expr, _MatMul):
+        new_left = substitute_expression(expr.left, var_map)
+        new_right = substitute_expression(expr.right, var_map)
+        if new_left is expr.left and new_right is expr.right:
+            return expr
+        return _MatMul(new_left, new_right)
+    if isinstance(expr, (Constant, Parameter, int, float)):
+        return expr
+    # An unrecognised node might hide a variable slated for substitution; passing
+    # it through unchanged would leave a dangling reference.  Refuse loudly.
+    if child_exprs(expr) is None:
+        raise NotImplementedError(
+            f"substitute_expression cannot rewrite node of type "
+            f"{type(expr).__name__!r}; refusing rather than risk a dangling "
+            f"reference to a substituted variable"
+        )
     return expr
 
 
@@ -113,9 +145,9 @@ def defining_expressions(agg: AggregationSet) -> dict[str, Expression]:
 
 
 def _references_variable(expr: Any) -> bool:
-    """Whether ``expr`` references any variable (opaque nodes count as yes)."""
-    names = _collect_var_names(expr)
-    return names is None or len(names) > 0
+    """Whether ``expr`` references any variable (unrecognised nodes count as yes)."""
+    names, analyzable = collect_variable_names(expr)
+    return (not analyzable) or len(names) > 0
 
 
 def _make_constraint(body: Expression, sense: str) -> Constraint:
