@@ -52,16 +52,23 @@ class DualRecovery:
 
     Attributes:
         available: False if recovery could not be performed (e.g. an unsupported
-            derivative, a maximise objective, or missing reduced duals).
+            derivative, a maximise objective, missing reduced duals, an active
+            eliminated-variable bound, a singular defining system, or a failed
+            KKT self-check).
         constraint_duals: ``{original_cid: multiplier}`` for every original
             constraint — surviving ones mapped from the reduced solve, defining
-            equalities recovered by back-substitution.
+            equalities recovered by solving the defining-multiplier system.
         full_x: the recovered full-space primal point used.
+        reason: when ``available`` is False, a short machine-readable tag for why
+            (e.g. ``"maximise"``, ``"active_eliminated_bound:y"``,
+            ``"unsupported_derivative"``, ``"singular_defining_system"``,
+            ``"residual_check_failed"``, ``"missing_reduced_duals"``).
     """
 
     available: bool
     constraint_duals: dict[int, float] = field(default_factory=dict)
     full_x: dict[str, Any] = field(default_factory=dict)
+    reason: str = ""
 
 
 def _grad(expr: Any, var: str, values: dict[str, Any], cache: dict) -> float | None:
@@ -75,6 +82,115 @@ def _grad(expr: Any, var: str, values: dict[str, Any], cache: dict) -> float | N
     return float(np.asarray(evaluate_expression(d, values)).reshape(()))
 
 
+_INF_BOUND = 1e19  # discopt unbounded sentinel
+
+
+def _active_eliminated_bound(model: Any, full_x: dict[str, Any], var: str, tol: float = 1e-8) -> bool:
+    """Whether eliminated ``var`` sits on a finite bound at the recovered point.
+
+    An active eliminated-variable bound contributes a γ-term to stationarity that
+    this recovery does not model, so an active bound puts the case out of scope
+    (the caller then reports ``available=False``).
+    """
+    v = next((vv for vv in model._variables if vv.name == var), None)
+    if v is None or var not in full_x:
+        return False
+    val = float(np.asarray(full_x[var]).reshape(()))
+    lb = float(np.min(v.lb))
+    ub = float(np.max(v.ub))
+    scale = tol * max(1.0, abs(val))
+    if lb > -_INF_BOUND and abs(val - lb) <= scale:
+        return True
+    if ub < _INF_BOUND and abs(ub - val) <= scale:
+        return True
+    return False
+
+
+def _solve_defining_duals(
+    model: Any,
+    full_x: dict[str, Any],
+    elim_pairs: list[tuple[str, int]],
+    surviving: dict[int, float],
+    cache: dict,
+) -> dict[int, float] | None:
+    """Solve the defining-equality multipliers as a linear system.
+
+    Stationarity in each eliminated variable ``v_i`` reads
+    ``∂f/∂v_i + Σ_surviving μ_c ∂body_c/∂v_i + Σ_j μ_{cid_j} ∂body_{cid_j}/∂v_i = 0``.
+    With one defining equality per elimination this is a square system
+    ``A μ = b``, ``A[i, j] = ∂body_{cid_j}/∂v_i`` and
+    ``b[i] = -(∂f/∂v_i + Σ_surviving μ_c ∂body_c/∂v_i)``, solved directly.
+
+    A single strictly-lower-triangular pass makes ``A`` triangular (the
+    back-substitution special case), but across recursive passes the combined
+    defining system can be *coupled* — a pass-0 defining body may reference a
+    variable eliminated in pass 1 — so no back-substitution order exists and the
+    linear solve is required.  Returns ``None`` for an unsupported derivative or a
+    singular / ill-conditioned system.
+    """
+    n = len(elim_pairs)
+    if n == 0:
+        return {}
+    cids = [cid for _v, cid in elim_pairs]
+    obj = model._objective
+    obj_expr = obj.expression if obj is not None else None
+    amat = np.zeros((n, n))
+    bvec = np.zeros(n)
+    for i, (vi, _cid_i) in enumerate(elim_pairs):
+        rhs = 0.0
+        if obj_expr is not None:
+            g = _grad(obj_expr, vi, full_x, cache)
+            if g is None:
+                return None
+            rhs += g
+        for cid, mu in surviving.items():
+            if mu == 0.0:
+                continue
+            g = _grad(model._constraints[cid].body, vi, full_x, cache)
+            if g is None:
+                return None
+            rhs += mu * g
+        bvec[i] = -rhs
+        for j, cid_j in enumerate(cids):
+            g = _grad(model._constraints[cid_j].body, vi, full_x, cache)
+            if g is None:
+                return None
+            amat[i, j] = g
+    cond = np.linalg.cond(amat)
+    if not np.isfinite(cond) or cond > 1e12:
+        return None
+    mu_vec = np.linalg.solve(amat, bvec)
+    return {cids[j]: float(mu_vec[j]) for j in range(n)}
+
+
+def _finalize_duals(
+    model: Any,
+    full_x: dict[str, Any],
+    elim_pairs: list[tuple[str, int]],
+    surviving: dict[int, float],
+) -> DualRecovery:
+    """Shared tail: active-bound guard, linear solve, KKT self-check."""
+    for var, _cid in elim_pairs:
+        if _active_eliminated_bound(model, full_x, var):
+            return DualRecovery(
+                available=False, reason=f"active_eliminated_bound:{var}", full_x=full_x
+            )
+    cache: dict = {}
+    defining = _solve_defining_duals(model, full_x, elim_pairs, surviving, cache)
+    if defining is None:
+        return DualRecovery(
+            available=False, reason="unsupported_derivative_or_singular", full_x=full_x
+        )
+    duals = {**surviving, **defining}
+    # Self-check: a successful recovery must satisfy full-space KKT stationarity.
+    # This turns any residual algebra gap into an honest available=False rather
+    # than a wrong-but-confident answer.
+    resid = kkt_stationarity_residual(model, full_x, duals)
+    if not np.isfinite(resid) or resid > 1e-6:
+        return DualRecovery(available=False, reason="residual_check_failed", full_x=full_x)
+    return DualRecovery(available=True, constraint_duals=duals, full_x=full_x)
+
+
 def recover_duals(reduced: Any, reduced_result: Any) -> DualRecovery:
     """Recover full-space constraint multipliers for a :class:`ReducedModel`.
 
@@ -86,16 +202,16 @@ def recover_duals(reduced: Any, reduced_result: Any) -> DualRecovery:
     """
     agg = reduced.aggregation_set
     if agg is None:
-        return DualRecovery(available=False)
+        return DualRecovery(available=False, reason="no_aggregation_set")
     model = agg.incidence.model
     obj = model._objective
     if obj is not None and obj.sense != ObjectiveSense.MINIMIZE:
-        return DualRecovery(available=False)  # maximise sign handling out of scope
+        return DualRecovery(available=False, reason="maximise")  # sign handling out of scope
 
     rx = getattr(reduced_result, "x", None)
     rduals = getattr(reduced_result, "constraint_duals", None)
     if not isinstance(rx, dict) or not isinstance(rduals, dict):
-        return DualRecovery(available=False)
+        return DualRecovery(available=False, reason="missing_reduced_duals")
 
     full_x = reduced.recovery.recover_full(rx)
 
@@ -106,39 +222,14 @@ def recover_duals(reduced: Any, reduced_result: Any) -> DualRecovery:
     surviving: dict[int, float] = {}
     for i, origin in enumerate(reduced.constraint_origin):
         if not isinstance(origin, int):
-            continue  # bound->inequality; not needed without active elim. bounds
+            continue  # bound->inequality; handled by the active-bound guard
         key: Any = f"c{i}"
         if key not in rduals:  # fall back to the constraint's own name
             key = getattr(reduced.model._constraints[i], "name", None)
         surviving[origin] = float(np.asarray(rduals.get(key, 0.0)).reshape(()))
 
-    cache: dict = {}
-    obj_expr = obj.expression if obj is not None else None
-
-    # Back-substitute the defining-equality multipliers in reverse order.
-    defining: dict[int, float] = {}
-    for e in reversed(agg.eliminations):
-        total = 0.0
-        if obj_expr is not None:
-            g = _grad(obj_expr, e.var, full_x, cache)
-            if g is None:
-                return DualRecovery(available=False)
-            total += g
-        for cid, mu in surviving.items():
-            if mu == 0.0:
-                continue
-            g = _grad(model._constraints[cid].body, e.var, full_x, cache)
-            if g is None:
-                return DualRecovery(available=False)
-            total += mu * g
-        for cid, mu in defining.items():  # later-eliminated (already solved)
-            g = _grad(model._constraints[cid].body, e.var, full_x, cache)
-            if g is None:
-                return DualRecovery(available=False)
-            total += mu * g
-        defining[e.cid] = -total / e.coeff
-
-    return DualRecovery(available=True, constraint_duals={**surviving, **defining}, full_x=full_x)
+    elim_pairs = [(e.var, e.cid) for e in agg.eliminations]
+    return _finalize_duals(model, full_x, elim_pairs, surviving)
 
 
 def _resolve_to_base(cid: int, level: int, origin_maps: list) -> int | None:
@@ -174,15 +265,15 @@ def recover_duals_from_result(result: Any, reduced_result: Any) -> DualRecovery:
     """
     base = getattr(result, "base_model", None)
     if base is None:
-        return DualRecovery(available=False)
+        return DualRecovery(available=False, reason="no_base_model")
     obj = base._objective
     if obj is not None and obj.sense != ObjectiveSense.MINIMIZE:
-        return DualRecovery(available=False)  # maximise sign handling out of scope
+        return DualRecovery(available=False, reason="maximise")  # sign handling out of scope
 
     rx = getattr(reduced_result, "x", None)
     rduals = getattr(reduced_result, "constraint_duals", None)
     if not isinstance(rx, dict) or not isinstance(rduals, dict):
-        return DualRecovery(available=False)
+        return DualRecovery(available=False, reason="missing_reduced_duals")
 
     # Full-space point in the base (scalar) space — not reassembled into arrays.
     full_x = result.recovery.recover_full(rx)
@@ -195,40 +286,23 @@ def recover_duals_from_result(result: Any, reduced_result: Any) -> DualRecovery:
     for j in range(len(result.reduced_model._constraints)):
         base_cid = _resolve_to_base(j, n_passes, origin_maps)
         if base_cid is None:
-            continue  # bound->inequality; not needed without active elim. bounds
+            continue  # bound->inequality; handled by the active-bound guard
         key: Any = f"c{j}"
         if key not in rduals:
             key = getattr(result.reduced_model._constraints[j], "name", None)
         surviving[base_cid] = float(np.asarray(rduals.get(key, 0.0)).reshape(()))
 
-    cache: dict = {}
-    obj_expr = obj.expression if obj is not None else None
-
-    # Back-substitute defining multipliers in reverse elimination order, on base bodies.
-    defining: dict[int, float] = {}
-    for var, local_cid, pass_index in reversed(result.elim_records):
+    # Resolve every elimination's defining equality to a base-model constraint id.
+    # Across recursive passes these defining bodies can be mutually coupled, so
+    # the multipliers are solved as one linear system, not back-substituted.
+    elim_pairs: list[tuple[str, int]] = []
+    for var, local_cid, pass_index in result.elim_records:
         base_cid = _resolve_to_base(local_cid, pass_index, origin_maps)
         if base_cid is None:
-            return DualRecovery(available=False)
-        coeff = _grad(base._constraints[base_cid].body, var, full_x, cache)
-        if coeff is None or coeff == 0.0:
-            return DualRecovery(available=False)
-        total = 0.0
-        if obj_expr is not None:
-            g = _grad(obj_expr, var, full_x, cache)
-            if g is None:
-                return DualRecovery(available=False)
-            total += g
-        for cid, mu in {**surviving, **defining}.items():
-            if mu == 0.0:
-                continue
-            g = _grad(base._constraints[cid].body, var, full_x, cache)
-            if g is None:
-                return DualRecovery(available=False)
-            total += mu * g
-        defining[base_cid] = -total / coeff
+            return DualRecovery(available=False, reason="defining_eq_pruned")
+        elim_pairs.append((var, base_cid))
 
-    return DualRecovery(available=True, constraint_duals={**surviving, **defining}, full_x=full_x)
+    return _finalize_duals(base, full_x, elim_pairs, surviving)
 
 
 def kkt_stationarity_residual(

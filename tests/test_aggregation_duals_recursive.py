@@ -110,3 +110,50 @@ def test_maximize_is_out_of_scope():
     result = aggregate(m, method="d2")
     dr = recover_duals_from_result(result, result.reduced_model.solve())
     assert not dr.available  # maximise sign handling documented out of scope
+
+
+def test_cross_pass_coupling_recovered_by_linear_solve():
+    """C7-A: recursive passes whose defining bodies couple are solved correctly.
+
+    ``b = 2a+1`` (pass 0) references ``a``, eliminated later; the combined defining
+    system is not triangular, so back-substitution gave wrong duals.  The linear
+    solve recovers multipliers that satisfy full-space KKT stationarity.
+    """
+    m = dm.Model("coupled")
+    a = m.continuous("a", lb=-9, ub=9)
+    b = m.continuous("b", lb=-9, ub=9)
+    c = m.continuous("c", lb=-9, ub=9)
+    d = m.continuous("d", lb=-9, ub=9)
+    m.subject_to(b - (2 * a + 1) == 0.0)
+    m.subject_to(c - (b + a) == 0.0)
+    m.subject_to(d - (c - 2) == 0.0)
+    m.subject_to(a + d >= 1.0)  # active inequality at the optimum
+    m.minimize((a - 0.1) ** 2 + b**2 + c**2 + d**2)
+    res = solve(m, method="d2", recover_duals=True)
+    assert res.duals.available, res.duals.reason
+    resid = kkt_stationarity_residual(
+        res.aggregation.base_model, res.duals.full_x, res.duals.constraint_duals
+    )
+    assert resid < 1e-6
+
+
+def test_active_eliminated_bound_reported_unavailable():
+    """C7-B: an active bound on an eliminated variable is out of scope, not wrong."""
+    m = dm.Model("activebnd")
+    x = m.continuous("x", lb=-10, ub=10)
+    y = m.continuous("y", lb=-10, ub=2.0)  # y = x^2 hits ub=2 at the optimum
+    m.subject_to(y - x**2 == 0.0)
+    m.minimize((x - 5.0) ** 2)
+    res = solve(m, method="d2", recover_duals=True)
+    assert not res.duals.available
+    assert res.duals.reason.startswith("active_eliminated_bound")
+
+
+def test_available_recoveries_pass_self_check():
+    """C7-C: any available=True recovery certifiably satisfies KKT stationarity."""
+    res = solve(_convex_recursive_model(), method="d2", recover_duals=True)
+    assert res.duals.available
+    resid = kkt_stationarity_residual(
+        res.aggregation.base_model, res.duals.full_x, res.duals.constraint_duals
+    )
+    assert resid < 1e-6

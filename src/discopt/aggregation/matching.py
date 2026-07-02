@@ -31,6 +31,19 @@ from typing import Callable, Hashable, Iterable, Iterator
 _INF = float("inf")
 
 
+def _sort_key(node: Hashable) -> tuple:
+    """Total, hash-seed-independent ordering key for graph nodes.
+
+    Node sets/adjacency are Python ``set``s, whose iteration order depends on
+    ``PYTHONHASHSEED``.  Iterating them in a fixed order at every choice point
+    makes matching, block triangularization and everything downstream (Schur
+    indices, orderings, implicit-block selection) reproducible across processes.
+    Keyed by ``(type name, repr)`` so heterogeneous or exotic node types never
+    raise a comparison ``TypeError``.
+    """
+    return (type(node).__name__, repr(node))
+
+
 @dataclass
 class BipartiteGraph:
     """A bipartite graph with adjacency in both directions.
@@ -104,8 +117,10 @@ def maximum_matching(graph: BipartiteGraph) -> dict:
 
     The returned matching is *a* maximum matching; it is not unique.
     """
-    adj = graph.adj_left
-    left_nodes = list(graph.left)
+    # Sort node and neighbour iteration so the returned matching is deterministic
+    # across PYTHONHASHSEED values (adjacency is set-valued; see _sort_key).
+    left_nodes = sorted(graph.left, key=_sort_key)
+    adj = {u: sorted(vs, key=_sort_key) for u, vs in graph.adj_left.items()}
     pair_left: dict[Hashable, Hashable | None] = {u: None for u in left_nodes}
     pair_right: dict[Hashable, Hashable | None] = {v: None for v in graph.right}
     dist: dict[Hashable, float] = {}
@@ -286,20 +301,23 @@ def block_triangularize(matching: dict, adj_left: dict) -> list[list[tuple]]:
     ``a2`` appearing in ``b`` yields a directed edge ``a2 -> a`` ("a depends on
     a2"), so a topological order places inputs before outputs.
     """
-    # var -> its defining (matched) constraint
+    # var -> its defining (matched) constraint.  Sort iteration throughout so the
+    # block partition/order is deterministic across PYTHONHASHSEED (see _sort_key).
     right_to_left = {v: u for u, v in matching.items()}
-    matched_vars = list(right_to_left)
+    matched_vars = sorted(right_to_left, key=_sort_key)
     matched_set = set(matched_vars)
 
     # Projection: directed dependency graph over matched variables.
     succ: dict = {a: set() for a in matched_vars}
     for a in matched_vars:
         b = right_to_left[a]
-        for a2 in adj_left.get(b, ()):  # every variable in the defining constraint
+        for a2 in sorted(adj_left.get(b, ()), key=_sort_key):  # vars in the defining constraint
             if a2 in matched_set and a2 != a:
                 succ[a2].add(a)  # a2 -> a : a depends on a2
 
-    sccs = strongly_connected_components(matched_vars, lambda n: succ[n])
+    sccs = strongly_connected_components(
+        matched_vars, lambda n: sorted(succ[n], key=_sort_key)
+    )
 
     # Condensation: map each var to its component id, build a DAG over components.
     comp_id: dict = {}
@@ -308,12 +326,12 @@ def block_triangularize(matching: dict, adj_left: dict) -> list[list[tuple]]:
             comp_id[node] = cid
     comp_succ: dict = {cid: set() for cid in range(len(sccs))}
     for a in matched_vars:
-        for a2 in succ[a]:  # a -> a2
+        for a2 in sorted(succ[a], key=_sort_key):  # a -> a2
             ca, ca2 = comp_id[a], comp_id[a2]
             if ca != ca2:
                 comp_succ[ca].add(ca2)
 
-    ordered_cids = topological_order(range(len(sccs)), lambda c: comp_succ[c])
+    ordered_cids = topological_order(range(len(sccs)), lambda c: sorted(comp_succ[c]))
 
     blocks: list[list[tuple]] = []
     for cid in ordered_cids:

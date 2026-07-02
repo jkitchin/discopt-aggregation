@@ -47,12 +47,15 @@ def test_inequality_model_offsets_eq_dual_block():
     x = m.continuous("x", lb=-5, ub=5)
     y = m.continuous("y", lb=-20, ub=20)
     z = m.continuous("z", lb=-5, ub=5)
-    m.subject_to(y - (2 * x + 1) == 0.0)  # eq (cid 0), defines y; eq_rank 0
+    m.subject_to(y - (2 * x + 1) == 0.0)  # eq (cid 0); x and y are both valid pivots
     m.subject_to(x + z >= 1.0)  # inequality (cid 1) -> n_ineq = 1
     m.minimize(y**2 + x + z)
-    # n_x = 3, n_ineq = 1 -> eq-dual base = 4; y is x-block index 1 (order x,y,z)
+    # n_x = 3, n_ineq = 1 -> eq-dual base = 4.  The defining equality (cid 0) has
+    # two valid pivots (x, y); the deterministic matching (C6) picks x -> x-block
+    # index 0.  Either choice is mathematically valid; what matters here is the
+    # eq-dual offset lands at n_x + n_ineq = 4, not n_x = 3.
     idx = kkt_schur_indices(m)
-    assert idx == [1, 4]  # {y in x-block, its defining eq in the offset eq-dual block}
+    assert idx == [0, 4]  # {eliminated var in x-block, its defining eq at offset 4}
 
 
 def test_surviving_array_shifts_flat_indices():
