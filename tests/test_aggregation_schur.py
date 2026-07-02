@@ -55,6 +55,35 @@ def test_inequality_model_offsets_eq_dual_block():
     assert idx == [1, 4]  # {y in x-block, its defining eq in the offset eq-dual block}
 
 
+def test_surviving_array_shifts_flat_indices():
+    """C5: an abstained array stays multi-scalar in the flat KKT layout.
+
+    ``a`` (shape ``(3,)``) is used via a whole-array ``SumExpression`` so it does
+    not scalarize; it therefore occupies flat x-indices ``0..2`` and shifts ``x``
+    and ``y`` to ``3`` and ``4``.  The old code counted ``a`` as one variable
+    (``n_x = 3``) and used positional indices, giving the wrong block
+    ``[1, 2, 4, 5]``; the flat layout gives ``[3, 4, 6, 7]``.
+    """
+    from discopt.modeling.core import SumExpression
+
+    m = dm.Model("arr")
+    a = m.continuous("a", shape=(3,), lb=-1, ub=1)
+    x = m.continuous("x", lb=-5, ub=5)
+    y = m.continuous("y", lb=-20, ub=20)
+    m.subject_to(SumExpression(a) + x - 10.0 == 0.0)  # a abstains -> stays (3,)
+    m.subject_to(y - (2 * x + 1) == 0.0)
+    m.subject_to(x <= 4.0)  # n_ineq = 1
+    m.minimize(y**2 + x)
+
+    idx, analyzed = kkt_schur_indices(m, return_model=True)
+    n_x = sum(int(getattr(v, "size", 1)) for v in analyzed._variables)
+    assert n_x == 5  # a(3) + x + y, not 3
+    # x and y both eliminated: x-block {3,4} (past the array), eq-dual {6,7}
+    assert idx == [3, 4, 6, 7]
+    assert all(i >= 3 for i in idx if i < n_x)  # x-block past the array
+    assert all(i >= n_x + 1 for i in idx if i >= n_x)  # eq-dual past n_x + n_ineq
+
+
 def test_no_eliminable_block_gives_empty():
     # a model where lm eliminates nothing -> empty reducible block
     m = dm.Model("free")
