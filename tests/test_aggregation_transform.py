@@ -195,3 +195,49 @@ def test_fixed_variable_adds_no_bound_inequalities():
     rm = apply_aggregation(m, agg)
     assert rm.eliminated == ["a"]
     assert rm.n_bound_inequalities == 0  # constant definition: no kept-var bound
+
+
+def test_infeasible_fixed_bound_detected():
+    """C1: a fixed variable whose value violates its box marks infeasibility.
+
+    ``y == 5`` forces ``y = 5``, outside ``y in [0, 1]``.  The reduced model
+    drops ``y``'s bound (it becomes no constraint on the kept variables), so
+    without an explicit check the reduced problem would look feasible.
+    """
+    import warnings
+
+    from discopt.aggregation.api import aggregate, solve
+
+    m = dm.Model("infeas_fixed")
+    y = m.continuous("y", lb=0.0, ub=1.0)
+    x = m.continuous("x", lb=-10.0, ub=10.0)
+    m.subject_to(y - 5.0 == 0.0)
+    m.subject_to(x - y >= 0.0)
+    m.minimize(x**2)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        agg = aggregate(m, method="ld1")
+    assert agg.infeasible_eliminations, "expected the fixed-variable violation recorded"
+    var, val, lb, ub = agg.infeasible_eliminations[0]
+    assert var == "y" and abs(val - 5.0) < 1e-9 and (lb, ub) == (0.0, 1.0)
+    assert any("infeasible" in str(w.message) for w in caught)
+
+    res = solve(m, method="ld1")
+    assert res.status == "infeasible"
+
+
+def test_fixed_variable_within_box_stays_feasible():
+    """C1 boundary: a fixed value inside the box is not flagged."""
+    from discopt.aggregation.api import aggregate, solve
+
+    m = dm.Model("feas_fixed")
+    y = m.continuous("y", lb=0.0, ub=5.0)
+    x = m.continuous("x", lb=-10.0, ub=10.0)
+    m.subject_to(y - 5.0 == 0.0)  # y = 5 is on the boundary, feasible
+    m.subject_to(x - y >= 0.0)
+    m.minimize(x**2)
+    agg = aggregate(m, method="ld1")
+    assert not agg.infeasible_eliminations
+    res = solve(m, method="ld1")
+    assert res.status == "optimal"

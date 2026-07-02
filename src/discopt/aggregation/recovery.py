@@ -276,4 +276,65 @@ class RecoveryMap:
         return {**kept_values, **self.recover(kept_values)}
 
 
-__all__ = ["evaluate_expression", "interval_evaluate", "RecoveryMap"]
+def feasibility_violations(model: Any, point: dict[str, Any], tol: float = 1e-7) -> list[str]:
+    """Return human-readable feasibility violations of ``point`` in ``model``.
+
+    Checks every algebraic constraint body against its sense (``body == 0`` or
+    ``body <= 0``; ``>=`` handled defensively) and every variable's box bounds,
+    with an absolute/relative tolerance ``tol``.  A constraint referencing a
+    variable absent from ``point`` is skipped.  Returns an empty list when
+    ``point`` is feasible.
+
+    Intended for *exact* points (values recovered from defining expressions, not
+    a solver iterate), where residual bodies are computed in closed form — so a
+    nonempty result is a genuine infeasibility, not solver noise.
+    """
+    from discopt.modeling.core import Constraint
+
+    violations: list[str] = []
+    for cid, c in enumerate(getattr(model, "_constraints", [])):
+        if not isinstance(c, Constraint):
+            continue
+        try:
+            body = np.asarray(evaluate_expression(c.body, point), dtype=float)
+        except (KeyError, NotImplementedError):
+            continue  # references an unknown variable/node — cannot judge here
+        worst = float(np.max(np.abs(body))) if body.size else 0.0
+        scale = max(1.0, worst)
+        sense = getattr(c, "sense", "==")
+        if sense == "==":
+            if worst > tol * scale:
+                violations.append(f"constraint {cid} (== 0) residual {worst:.3g}")
+        elif sense == "<=":
+            hi = float(np.max(body)) if body.size else 0.0
+            if hi > tol * scale:
+                violations.append(f"constraint {cid} (<= 0) exceeds by {hi:.3g}")
+        elif sense == ">=":
+            lo = float(np.min(body)) if body.size else 0.0
+            if lo < -tol * scale:
+                violations.append(f"constraint {cid} (>= 0) short by {-lo:.3g}")
+
+    for v in getattr(model, "_variables", []):
+        if v.name not in point:
+            continue
+        val = np.asarray(point[v.name], dtype=float)
+        lb = np.asarray(v.lb, dtype=float)
+        ub = np.asarray(v.ub, dtype=float)
+        margin = tol * np.maximum(1.0, np.abs(np.where(np.isfinite(lb), lb, 0.0)))
+        below = val < lb - margin
+        margin_u = tol * np.maximum(1.0, np.abs(np.where(np.isfinite(ub), ub, 0.0)))
+        above = val > ub + margin_u
+        if np.any(below) or np.any(above):
+            violations.append(
+                f"variable {v.name!r} value {np.asarray(val).ravel()[:4]} "
+                f"outside box [{np.min(lb):.3g}, {np.max(ub):.3g}]"
+            )
+    return violations
+
+
+__all__ = [
+    "evaluate_expression",
+    "interval_evaluate",
+    "RecoveryMap",
+    "feasibility_violations",
+]

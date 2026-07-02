@@ -177,3 +177,44 @@ def test_unknown_method_raises():
     m.minimize(x)
     with pytest.raises(ValueError, match="unknown aggregation method"):
         aggregate(m, method="bogus")
+
+
+def test_fully_determined_infeasible_detected():
+    """C2: an over-determined system that eliminates all variables is infeasible.
+
+    ``a == 1`` and ``a == 2`` cannot both hold.  ld1 eliminates ``a`` via the
+    first and carries the second as a variable-free residual constraint
+    ``1 == 2``; solve() must verify residual constraints before claiming optimal.
+    """
+    m = dm.Model("fully_det_infeas")
+    a = m.continuous("a", lb=-10, ub=10)
+    m.subject_to(a - 1.0 == 0.0)
+    m.subject_to(a - 2.0 == 0.0)
+    m.minimize(a)
+    res = solve(m, method="ld1")
+    assert res.status == "infeasible"
+
+
+def test_fully_determined_feasible_still_optimal():
+    """C2 no-regression: a consistent fully-determined system stays optimal."""
+    m = dm.Model("fully_det_feas")
+    a = m.continuous("a", lb=-10, ub=10)
+    b = m.continuous("b", lb=-10, ub=10)
+    m.subject_to(a - 1.0 == 0.0)
+    m.subject_to(b - (a + 1.0) == 0.0)
+    m.minimize(a + b)
+    res = solve(m, method="ld1")
+    assert res.status == "optimal"
+    assert abs(res.objective - 3.0) < 1e-9  # a=1, b=2
+
+
+def test_fully_determined_chained_bound_violation():
+    """C2: a recovered value violating a downstream variable's box is infeasible."""
+    m = dm.Model("fully_det_chain")
+    a = m.continuous("a", lb=-10, ub=10)
+    b = m.continuous("b", lb=0.0, ub=1.0)
+    m.subject_to(a - 1.0 == 0.0)
+    m.subject_to(b - (a + 100.0) == 0.0)  # b = 101, outside [0, 1]
+    m.minimize(a + b)
+    res = solve(m, method="ld1")
+    assert res.status == "infeasible"

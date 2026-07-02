@@ -151,6 +151,11 @@ class ReducedModel:
             reduced-solution duals back to the original constraints.
         aggregation_set: the :class:`AggregationSet` applied (carries the source
             model, defining constraints and coefficients) — used by dual recovery.
+        infeasible_eliminations: ``(var, value, lb, ub)`` for each fixed-variable
+            (constant-definition) elimination whose defining value provably lies
+            outside the eliminated variable's box.  A nonempty list means the
+            *original* model is infeasible; :func:`~discopt.aggregation.api.solve`
+            turns this into an ``infeasible`` status.
     """
 
     model: Any
@@ -163,6 +168,7 @@ class ReducedModel:
     n_bound_pruned: int = 0
     constraint_origin: list = field(default_factory=list)
     aggregation_set: Any = None
+    infeasible_eliminations: list[tuple[str, float, float, float]] = field(default_factory=list)
 
 
 def _kept_variable_boxes(reduced: Any) -> dict[str, tuple[float, float]]:
@@ -238,11 +244,23 @@ def apply_aggregation(model: Any, agg: AggregationSet, prune_bounds: bool = True
     boxes = _kept_variable_boxes(reduced) if prune_bounds else {}
     n_bound_ineq = 0
     n_bound_pruned = 0
+    infeasible_eliminations: list[tuple[str, float, float, float]] = []
     for name in eliminated_order:
         d = defining_new[name]
         if not _references_variable(d):
             # A fixed variable (constant definition): its box is a feasibility
-            # check on a constant, adding no constraint on the kept variables.
+            # check on a constant.  It adds no constraint on the kept variables,
+            # but if the constant lies outside the eliminated variable's box the
+            # *original* model is infeasible — record it so solve() can report it
+            # rather than silently returning a feasible reduced problem.
+            v0 = orig_by_name[name]
+            lb0 = float(np.min(v0.lb))
+            ub0 = float(np.max(v0.ub))
+            val = float(np.asarray(interval_evaluate(d, {})[0]))
+            m_lo = 1e-9 * max(1.0, abs(lb0))
+            m_hi = 1e-9 * max(1.0, abs(ub0))
+            if (lb0 > -_INF and val < lb0 - m_lo) or (ub0 < _INF and val > ub0 + m_hi):
+                infeasible_eliminations.append((name, val, lb0, ub0))
             continue
         v = orig_by_name[name]
         lb = float(np.min(v.lb))
@@ -286,6 +304,7 @@ def apply_aggregation(model: Any, agg: AggregationSet, prune_bounds: bool = True
         n_bound_pruned=n_bound_pruned,
         constraint_origin=constraint_origin,
         aggregation_set=agg,
+        infeasible_eliminations=infeasible_eliminations,
     )
 
 

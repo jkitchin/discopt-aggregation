@@ -23,12 +23,17 @@ from the reduced-space solution.
 from __future__ import annotations
 
 import re
+import warnings
 from dataclasses import dataclass, field
 from typing import Any
 
 from discopt.aggregation.guards import apply_elimination_guards
 from discopt.aggregation.incidence import build_incidence
-from discopt.aggregation.recovery import RecoveryMap, evaluate_expression
+from discopt.aggregation.recovery import (
+    RecoveryMap,
+    evaluate_expression,
+    feasibility_violations,
+)
 from discopt.aggregation.scalarize import ScalarizationMap, scalarize_model
 from discopt.aggregation.strategies import drop_linearity_breaking, resolve_strategy
 from discopt.aggregation.transform import apply_aggregation
@@ -70,6 +75,10 @@ class AggregationResult:
             constraint index (dual recovery, D1).
         elim_records: ``(var, local_cid, pass_index)`` for every elimination, in
             order — ``local_cid`` indexes the model of pass ``pass_index``.
+        infeasible_eliminations: ``(var, value, lb, ub)`` for every fixed-variable
+            elimination whose constant value falls outside the eliminated
+            variable's box, across all passes.  Nonempty ⇒ the original model is
+            infeasible (:func:`solve` reports ``infeasible``).
     """
 
     reduced_model: Any
@@ -83,6 +92,7 @@ class AggregationResult:
     base_model: Any = None
     origin_maps: list[list] = field(default_factory=list)
     elim_records: list[tuple[str, int, int]] = field(default_factory=list)
+    infeasible_eliminations: list[tuple[str, float, float, float]] = field(default_factory=list)
 
     @property
     def n_eliminated(self) -> int:
@@ -174,6 +184,7 @@ def aggregate(
     eliminated: list[str] = []
     origin_maps: list[list] = []
     elim_records: list[tuple[str, int, int]] = []
+    infeasible_eliminations: list[tuple[str, float, float, float]] = []
 
     for stage in pipeline:
         while True:
@@ -202,9 +213,20 @@ def aggregate(
             all_defining.update(reduced.recovery.defining)
             order_stack.append(reduced.recovery.order)
             eliminated.extend(reduced.eliminated)
+            infeasible_eliminations.extend(reduced.infeasible_eliminations)
             current = reduced.model
             if not recursive:
                 break
+
+    if infeasible_eliminations:
+        names = ", ".join(
+            f"{v}={val:.3g}∉[{lb:.3g},{ub:.3g}]" for v, val, lb, ub in infeasible_eliminations
+        )
+        warnings.warn(
+            f"aggregation found the model infeasible: fixed variable(s) {names}",
+            UserWarning,
+            stacklevel=2,
+        )
 
     # Later-eliminated variables must be recovered first: reverse pass order.
     combined_order = [name for order in reversed(order_stack) for name in order]
@@ -221,6 +243,7 @@ def aggregate(
         base_model=model,
         origin_maps=origin_maps,
         elim_records=elim_records,
+        infeasible_eliminations=infeasible_eliminations,
     )
 
 
@@ -283,10 +306,33 @@ def solve(
         max_def_nodes=max_def_nodes,
         max_condition=max_condition,
     )
+    # A fixed-variable elimination proved the model infeasible (C1): report it
+    # instead of solving a reduced model that dropped the violated bound.
+    if result.infeasible_eliminations:
+        return AggregatedSolveResult(
+            status="infeasible",
+            objective=None,
+            x=result.recover_full({}) if not result.reduced_model._variables else {},
+            reduced_result=None,
+            aggregation=result,
+        )
+
     # Fully-determined model: aggregation eliminated every variable, so there is
-    # nothing left to solve. Recover the (unique) point and evaluate the objective.
+    # nothing left to solve. Recover the (unique) point, then verify it satisfies
+    # the residual (variable-free) constraints and the original variables' bounds
+    # before claiming optimality — an over-determined system can be infeasible.
     if not result.reduced_model._variables:
         full_x = result.recover_full({})
+        violations = feasibility_violations(result.reduced_model, {})
+        violations += feasibility_violations(result.original_model, full_x)
+        if violations:
+            return AggregatedSolveResult(
+                status="infeasible",
+                objective=None,
+                x=full_x,
+                reduced_result=None,
+                aggregation=result,
+            )
         obj = result.original_model._objective
         objective = float(evaluate_expression(obj.expression, full_x)) if obj is not None else None
         return AggregatedSolveResult(
