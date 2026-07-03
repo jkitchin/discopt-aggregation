@@ -97,3 +97,16 @@ for s in 0 5 7; do PYTHONHASHSEED=$s python -c "from discopt.aggregation import 
 
 Never eliminated by any method. If you need an integer relationship substituted,
 that's out of scope — aggregation targets scalar continuous variables only.
+
+
+## An integer variable is not eliminated
+
+By default integers are never candidates — pass `integer_aggregation=True`. Even
+then, elimination is admitted only when integrality is *implied*; if your integer
+is not eliminated with the flag on, check the four conditions: the defining
+equality must be **fully affine** (no nonlinear term), the **pivot ±1** (so
+`y = 2*i` cannot eliminate `i`), **every other participant integer/binary** (a
+continuous variable in the definition abstains), and **every other coefficient
+and the constant integral** (fractional data abstains). Integers appearing only
+in *inequalities* (e.g. on/off binaries `x <= cap*b`) are never eliminable — they
+are not defined by an equality.

@@ -96,6 +96,7 @@ All are keyword args to `aggregate`/`solve`. Defaults are safe no-ops unless not
 | `tearing` | `"greedy"` | `"exact"` = maximum-acyclic-subset tear of cyclic blocks (eliminates ≥ greedy per block) |
 | `decomposable` | `False` | local-search the `lm` matching for a more decomposable (higher Theorem-2 bound) structure |
 | `preserve_target_linearity` | `False` | drop an elimination that would turn a currently-linear constraint nonlinear |
+| `integer_aggregation` | `False` | **also** eliminate scalar integer/binary variables when integrality is *implied* (affine, pivot ±1, all-integer participants, integral data) — MINLP branching-space reduction |
 | `recover_duals` | `False` | (`solve` only) also recover full-space Lagrange multipliers |
 
 Deep dive with recipes: `references/options.md`.

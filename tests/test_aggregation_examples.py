@@ -171,3 +171,10 @@ def test_performance_example_reduces_problem_size():
     row = rows[0]
     assert row["n_eliminated"] > 0
     assert row["reduced_vars"] < row["orig_vars"]  # smaller reduced model
+
+
+def test_integer_aggregation_example_runs():
+    out = examples.example_integer_aggregation()
+    assert out["off"] == 0 and out["on"] >= out["n_before"] // 2 - 1  # chain collapses
+    assert out["all_integral"]
+    assert abs(out["obj"] - out["direct_obj"]) < 1e-6  # reduced == direct MINLP optimum

@@ -87,6 +87,21 @@ Drop an elimination whose *nonlinear* defining expression would turn a
 currently-*linear* constraint nonlinear (the degradation Amarger et al. warn
 about). Use when downstream steps rely on constraints staying linear.
 
+## Integer aggregation
+
+### `integer_aggregation` (default `False`) — opt-in MIP-style elimination
+
+Also eliminate scalar integer/binary variables whose integrality is *implied*:
+```python
+solve(m, method="lm", integer_aggregation=True)   # MINLP: collapse an integer chain
+```
+Admitted only when the defining equality is fully affine, the pivot is ±1, every
+other participant is integer/binary, and every other coefficient and the constant
+are integral. Recovered integers are exactly integral. Default-off and a proven
+no-op with the flag off. Pair with `order="min_fill"` on long chains (though an
+all-integer, unit-coefficient chain is affine and does not blow up). See
+`references/methods.md` for the full rule and what abstains.
+
 ## Solve-only
 
 ### `recover_duals` (default `False`, `solve` only)

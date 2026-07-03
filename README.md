@@ -79,6 +79,20 @@ symlinks to it.
 `ld1`/`ecd2`/`ld2`/`d2` are structure-preserving; `gr`/`lm` are
 approximate-maximum. The paper recommends `d2`; it is the default.
 
+### Integer aggregation (opt-in, beyond the paper)
+
+By default only scalar *continuous* variables are eliminated. Pass
+`aggregate(..., integer_aggregation=True)` (or `solve(...)`) to also eliminate a
+scalar **integer/binary** variable — but only when its integrality is *implied*,
+the standard MIP-presolve condition (Achterberg et al. 2020): the defining
+equality is fully affine, the pivot coefficient is `±1`, every other variable in
+it is integer/binary, and every other coefficient and the constant are integral
+(e.g. an all-integer stock balance `s[t] = s[t-1] + q[t] - d[t]`). Recovery
+returns exactly integral values; dual recovery reports `available=False` over
+eliminated integers. The flag is default-off and never eliminates a variable it
+cannot prove integral (fractional data, non-unit pivot, or a continuous
+participant all abstain), so the default behaviour is unchanged.
+
 ## Features
 
 - **Six strategies**, each producing a strictly lower-triangular aggregation set

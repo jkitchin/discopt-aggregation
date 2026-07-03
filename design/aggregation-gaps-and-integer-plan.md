@@ -692,7 +692,13 @@ run with `order="min_fill"` in tests anyway, and note SC1 makes the walk cheap).
   defining equalities — a good adversarial check).
 **Files.** `testproblems.py`, tests, registry/`__all__` (+ packaging pin bump).
 
-### IA6. Example, docs, skill (S)
+### IA6. Example, docs, skill (S) — ✅ DONE
+
+`example_integer_aggregation` (inventory MINLP, before/after sizes, integral
+recovered stocks) + asserting test; README "Methods" gains an integer-aggregation
+subsection; CHANGELOG [Unreleased] IA entry; skill updated (SKILL.md options row,
+methods.md integer section + conditional "will NOT eliminate", options.md recipe,
+troubleshooting.md "integer not eliminated" entry).
 
 **Design.** `example_integer_aggregation` in `examples.py` (chain model, before/
 after sizes, recovered integral stocks) + asserting test; README "Methods"

@@ -67,9 +67,28 @@ make its reduced model milder (lower density) than `gr` on some problems.
 6. **Cyclic (irreducible) blocks** you want gone: explicit methods *drop* them;
    use `eliminate_implicit` (see `recovery-and-implicit.md`).
 
+## Integer aggregation (opt-in)
+
+By default only scalar *continuous* variables are eliminated. Pass
+`integer_aggregation=True` to also eliminate a scalar **integer/binary** variable
+— but only when its integrality is *implied* (standard MIP presolve, Achterberg
+et al. 2020): the defining equality is **fully affine**, the **pivot is ±1**,
+**every other participant is integer/binary**, and **every other coefficient and
+the constant are integral**. Example that qualifies: an all-integer stock balance
+`s[t] = s[t-1] + q[t] - d[t]`. What abstains: a continuous variable in the
+definition, a non-unit pivot (`y = 2*i` can define `y` but cannot eliminate `i`),
+a fractional coefficient or constant, or a nonlinear body. Recovery returns
+exactly integral values (a non-integral result raises); dual recovery reports
+`available=False` over eliminated integers. The flag is default-off and a proven
+no-op with the flag off. Use it for MINLPs with integer accounting/counting
+chains, where fewer integers means a smaller branching space. It does nothing for
+models whose integers appear only in inequalities (e.g. `unit_selection`'s
+on/off binaries).
+
 ## What each method will NOT eliminate
 
-- Integer or binary variables (kept always — MINLP-safe).
+- Integer or binary variables **unless `integer_aggregation=True`** and
+  integrality is implied (see above); by default they are kept — MINLP-safe.
 - A variable in a genuinely opaque/unanalyzable constraint node (refused).
 - A variable whose defining pivot is tiny relative to its neighbors
   (`pivot_tol`, default `1e-6`).

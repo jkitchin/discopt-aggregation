@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Integer variable aggregation (opt-in, IA1-IA6).** `aggregate(...,
+  integer_aggregation=True)` / `solve(...)` also eliminates scalar integer/binary
+  variables when integrality is *implied* -- the standard MIP-presolve rule
+  (Achterberg et al. 2020): fully-affine defining equality, pivot `+-1`, all other
+  participants integer/binary, integral other coefficients and constant. A fixed
+  integer set to a fractional value is reported infeasible (via the existing C1
+  path); box->inequality conversion tightens to the integer grid (IA3); recovered
+  eliminated integers are asserted integral and returned rounded (IA4, a
+  non-integral result raises rather than shipping a wrong value); dual recovery
+  declines over eliminated integers (`reason="eliminated_integer_variable"`). New
+  `inventory_chain` MINLP test problem: an all-integer stock chain collapses
+  end-to-end and round-trips to the same optimum with integral values (IA5).
+  **Default-off and provably a no-op with the flag off** -- eliminated lists on
+  the whole corpus are byte-identical, and `unit_selection` binaries are never
+  eliminated even flag-on. Worked example `example_integer_aggregation` (IA6).
 - **Iteration-cap plumbing for local solves (RL1).** The study harness can now
   count convergence *within an iteration limit* — the paper's reliability
   protocol (3000 iterations). A new `options: dict | None = None` argument threads
