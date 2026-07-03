@@ -114,3 +114,23 @@ def test_capped_aggregation_still_round_trips():
     xv = float(np.asarray(capped.x["x"]).reshape(()))
     s0 = float(np.asarray(capped.x["s0"]).reshape(()))
     assert s0 == pytest.approx(0.5 * xv + 1.0, abs=1e-6)
+
+
+def test_conditioning_accounts_for_large_coefficients():
+    """N1: a unit-pivot elimination with a large coefficient is ill-conditioned.
+
+    ``v = 1e6*u`` has pivot 1 but amplifies recovery error by 1e6.  The old
+    estimate (a bare 1/|coeff| product) reported 1.0 and missed it.
+    """
+    m = dm.Model("bigcoeff")
+    x = m.continuous("x", lb=-9, ub=9)
+    u = m.continuous("u", lb=-9, ub=9)
+    v = m.continuous("v", lb=-9e9, ub=9e9)
+    m.subject_to(u - x == 0.0)
+    m.subject_to(v - 1e6 * u == 0.0)
+    m.minimize(x**2)
+    agg = aggregation_set(m, method="gr")
+    assert conditioning_estimate(agg) == pytest.approx(1e6, rel=1e-9)
+    capped = aggregate(m, method="gr", max_condition=1e3)
+    uncapped = aggregate(m, method="gr")
+    assert capped.n_eliminated < uncapped.n_eliminated  # the 1e6 elimination dropped

@@ -11,11 +11,15 @@ and before it is applied.  Both default off (no behaviour change).
   numerical pivot guard, the latter a *Jacobian-incidence* estimate, neither the
   substituted-expression size.
 
-* **``max_condition``** — drop any elimination whose cumulative pivot
-  amplification exceeds a cap.  Eliminating ``v`` (``v = -rest/coeff``) amplifies
-  ``v``'s recovery by ``1/|coeff|``; if ``rest`` references an earlier-eliminated
-  ``u``, the amplification compounds as ``(1/|coeff_v|) * A(u)``.  ``pivot_tol``
-  only bounds a *single* pivot; this bounds the product along the composed chain.
+* **``max_condition``** — drop any elimination whose worst-case recovery-error
+  amplification exceeds a cap.  For an eliminated ``v`` whose *resolved* defining
+  expression ``D_v`` (inlined into kept-variable terms) is what recovery
+  evaluates, a unit error in a kept variable ``k`` perturbs the recovered ``v`` by
+  ``∂D_v/∂k``; the amplification is ``A(v) = max_k |∂D_v/∂k|`` bounded over the
+  kept-variable boxes.  This composes the pivot *and* the coefficients each
+  referenced variable enters with — unlike a bare ``1/|coeff|`` product, which
+  misses a large multiplier such as ``v = 10^6·u`` (unit pivot, huge
+  amplification).  ``pivot_tol`` only bounds a *single* pivot.
 
 Dropping any subset of a lower-triangular elimination set leaves it lower
 triangular (a later definition then references a *kept* variable instead of an
@@ -27,11 +31,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+import numpy as np
 from discopt.modeling.core import BinaryOp, Constant, Variable
 
+from discopt.aggregation.derivatives import differentiate_expression
+from discopt.aggregation.exprwalk import collect_variable_names
 from discopt.aggregation.hessian_cost import _children, expression_dag_size
+from discopt.aggregation.recovery import interval_evaluate
 from discopt.aggregation.strategies import AggregationSet
 from discopt.aggregation.transform import substitute_expression
+
+_INF_BOUND = 1e19
 
 
 def _var_names(expr: Any) -> set[str]:
@@ -46,6 +56,19 @@ def _var_names(expr: Any) -> set[str]:
     return names
 
 
+def _model_boxes(inc: Any) -> dict[str, tuple[float, float]]:
+    """Interval box ``{name: (lo, hi)}`` for the incidence model's variables."""
+    boxes: dict[str, tuple[float, float]] = {}
+    for v in getattr(inc.model, "_variables", []):
+        lb = float(np.min(v.lb))
+        ub = float(np.max(v.ub))
+        boxes[v.name] = (
+            -float("inf") if lb <= -_INF_BOUND else lb,
+            float("inf") if ub >= _INF_BOUND else ub,
+        )
+    return boxes
+
+
 def _raw_define(inc: Any, cid: int, var: str, coeff: float) -> Any:
     """The pre-inline defining expression ``var = -rest/coeff`` (rest = body|var=0)."""
     body = inc.constraints[cid].body
@@ -53,34 +76,55 @@ def _raw_define(inc: Any, cid: int, var: str, coeff: float) -> Any:
     return BinaryOp("*", rest, Constant(-1.0 / coeff))
 
 
+def _amplification(resolved: Any, boxes: dict[str, tuple[float, float]]) -> float:
+    """Worst-case recovery-error amplification ``max_k |∂resolved/∂k|`` over boxes.
+
+    ``resolved`` is a defining expression already inlined into kept-variable
+    terms, so its partials w.r.t. each kept variable are exactly the sensitivities
+    recovery propagates.  A constant definition amplifies nothing (``0.0``); a
+    non-differentiable node cannot be bounded and returns ``inf`` (conservatively
+    dropped by ``max_condition``).
+    """
+    names, analyzable = collect_variable_names(resolved)
+    if not analyzable:
+        return float("inf")
+    worst = 0.0
+    for k in names:
+        d = differentiate_expression(resolved, k)
+        if d is None:
+            return float("inf")
+        lo, hi = interval_evaluate(d, boxes)
+        worst = max(worst, abs(lo), abs(hi))
+    return worst
+
+
 @dataclass
 class _Walk:
     resolved: dict[str, Any]  # kept var -> resolved (inlined) defining expr
-    ampl: dict[str, float]  # kept var -> cumulative pivot amplification
 
 
-def _step(walk: _Walk, inc: Any, e: Any) -> tuple[Any, float]:
+def _step(walk: _Walk, inc: Any, e: Any, boxes: dict[str, tuple[float, float]]) -> tuple[Any, float]:
     """Resolved expression and amplification for elimination ``e`` given kept state."""
     raw = _raw_define(inc, e.cid, e.var, e.coeff)
-    referenced = [walk.ampl[u] for u in _var_names(raw) if u in walk.ampl]
-    amplification = (1.0 / abs(e.coeff)) * (max(referenced) if referenced else 1.0)
     resolved = substitute_expression(raw, walk.resolved)  # inline kept elims only
-    return resolved, amplification
+    return resolved, _amplification(resolved, boxes)
 
 
 def conditioning_estimate(agg: AggregationSet) -> float:
-    """Worst-case cumulative pivot amplification over the composed elimination chain.
+    """Worst-case recovery-error amplification over the composed elimination chain.
 
-    ``1.0`` means every pivot is unit-scaled; large values mean a chain of small
-    pivots compounds (ill-conditioned back-substitution / recovery).  Returns
-    ``1.0`` for an empty set.
+    ``A(v) = max_k |∂D_v/∂k|`` bounded over the kept-variable boxes, maximised
+    over eliminations, where ``D_v`` is ``v``'s resolved (inlined) defining
+    expression.  ``1.0`` means unit-scaled; large values mean recovery of some
+    eliminated variable is ill-conditioned (a small pivot, a large coefficient, or
+    a compounding chain).  Returns ``1.0`` for an empty set.
     """
-    walk = _Walk(resolved={}, ampl={})
+    boxes = _model_boxes(agg.incidence)
+    walk = _Walk(resolved={})
     worst = 1.0
     for e in agg.eliminations:
-        resolved, amplification = _step(walk, agg.incidence, e)
+        resolved, amplification = _step(walk, agg.incidence, e, boxes)
         walk.resolved[e.var] = resolved
-        walk.ampl[e.var] = amplification
         worst = max(worst, amplification)
     return worst
 
@@ -99,12 +143,13 @@ def apply_elimination_guards(
     if max_def_nodes is None and max_condition is None:
         return agg
 
-    walk = _Walk(resolved={}, ampl={})
+    boxes = _model_boxes(agg.incidence)
+    walk = _Walk(resolved={})
     kept = []
     dropped_nodes = 0
     dropped_cond = 0
     for e in agg.eliminations:  # topological order
-        resolved, amplification = _step(walk, agg.incidence, e)
+        resolved, amplification = _step(walk, agg.incidence, e, boxes)
         if max_condition is not None and amplification > max_condition:
             dropped_cond += 1
             continue
@@ -112,7 +157,6 @@ def apply_elimination_guards(
             dropped_nodes += 1
             continue
         walk.resolved[e.var] = resolved
-        walk.ampl[e.var] = amplification
         kept.append(e)
 
     return AggregationSet(

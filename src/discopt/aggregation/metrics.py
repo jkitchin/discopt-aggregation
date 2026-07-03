@@ -33,10 +33,10 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from discopt._jax.dependent_vars import _collect_var_names, _isolated_affine_coeff
 from discopt.modeling.core import Constraint
 
 from discopt.aggregation.api import aggregate
+from discopt.aggregation.exprwalk import classify_linearity, collect_variable_names
 from discopt.aggregation.strategies import STRATEGIES
 
 _DEFAULT_METHODS = ["ld1", "ecd2", "ld2", "d2", "gr", "lm"]
@@ -74,11 +74,6 @@ def _function_bodies(model: Any) -> list[Any]:
     return bodies
 
 
-def _nonlinear_names(body: Any, names: set[str]) -> list[str]:
-    """Names in ``names`` that participate *nonlinearly* in ``body``."""
-    return [nm for nm in names if _isolated_affine_coeff(body, nm) is None]
-
-
 def exact_hessian_nnz(model: Any) -> int | None:
     """Exact Lagrangian-Hessian lower-triangle nonzero count via AD.
 
@@ -111,25 +106,31 @@ def model_structure(model: Any, exact_hessian: bool = False) -> ModelStructure:
     n_con = len(cons)
     n_eq = sum(1 for c in cons if c.sense == "==")
 
+    # discopt classifies *array* variables as nonlinear conservatively; match that
+    # so numbers are identical, while using the DAG-memoised classifier (O(distinct
+    # nodes)) instead of per-name _isolated_affine_coeff (O(tree)) — the latter is
+    # intractable on substitution-expanded bodies (a reduced constraint can have a
+    # multi-million-node tree over a few-thousand-node DAG).
+    array_names = frozenset(v.name for v in model._variables if int(getattr(v, "size", 1)) > 1)
+
     total_nnz = 0
     total_lin = 0
     for c in cons:
-        names = _collect_var_names(c.body)
-        if names is None:  # opaque body: cannot analyse, contribute nothing
+        names, analyzable = collect_variable_names(c.body)
+        if not analyzable:  # opaque body: cannot analyse, contribute nothing
             continue
         total_nnz += len(names)
-        for nm in names:
-            coeff = _isolated_affine_coeff(c.body, nm)
-            if coeff is not None and coeff != 0.0:
-                total_lin += 1
+        linmap = classify_linearity(c.body, array_names)
+        total_lin += sum(1 for nm in names if linmap.get(nm, False))
 
     # Structural Lagrangian-Hessian coupling pattern.
     pairs: set[frozenset] = set()
     for body in _function_bodies(model):
-        names = _collect_var_names(body)
-        if names is None:
+        names, analyzable = collect_variable_names(body)
+        if not analyzable:
             continue
-        nl = _nonlinear_names(body, names)
+        linmap = classify_linearity(body, array_names)
+        nl = [nm for nm in names if not linmap.get(nm, False)]
         for i in range(len(nl)):
             for j in range(i, len(nl)):
                 pairs.add(frozenset({nl[i], nl[j]}))
