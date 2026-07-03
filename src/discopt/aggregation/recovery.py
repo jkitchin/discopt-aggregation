@@ -251,22 +251,38 @@ class RecoveryMap:
         defining: ``{var: expression}`` giving each eliminated variable as a
             function of the *kept* variables (references kept variables by name).
         order: eliminated variable names in topological (inputs-first) order.
+        integer_vars: names among ``order`` that are integer/binary (IA4).  Their
+            recovered value must be integral by construction (the IA1
+            integrality-implication rule); recovery asserts this and returns the
+            rounded value.
     """
 
     defining: dict[str, Expression] = field(default_factory=dict)
     order: list[str] = field(default_factory=list)
+    integer_vars: frozenset[str] = frozenset()
 
     def recover(self, kept_values: dict[str, Any]) -> dict[str, Any]:
         """Reconstruct the eliminated variable values from kept-variable values.
 
         Evaluates the defining expressions in elimination order.  Later
         definitions may reference earlier eliminated variables, so recovered
-        values are accumulated into the evaluation environment as we go.
+        values are accumulated into the evaluation environment as we go.  An
+        eliminated integer variable's value must be integral (guaranteed by the
+        IA1 rule); a non-integral result is a bug, so it raises rather than
+        silently rounding a wrong value.
         """
         env = dict(kept_values)
         recovered: dict[str, Any] = {}
         for name in self.order:
             val = _to_scalar(evaluate_expression(self.defining[name], env))
+            if name in self.integer_vars:
+                fval = float(np.asarray(val))
+                if abs(fval - round(fval)) > 1e-6:
+                    raise AssertionError(
+                        f"eliminated integer variable {name!r} recovered non-integral "
+                        f"value {fval!r}; the integrality-implication rule (IA1) was violated"
+                    )
+                val = float(round(fval))
             recovered[name] = val
             env[name] = val
         return recovered

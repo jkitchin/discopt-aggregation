@@ -246,7 +246,18 @@ def aggregate(
 
     # Later-eliminated variables must be recovered first: reverse pass order.
     combined_order = [name for order in reversed(order_stack) for name in order]
-    recovery = RecoveryMap(defining=all_defining, order=combined_order)
+    # IA4: mark which eliminated variables are integer/binary so recovery returns
+    # integral values (their integrality is guaranteed by the IA1 rule).
+    from discopt.modeling.core import VarType as _VarType
+
+    _int_types = {_VarType.INTEGER, _VarType.BINARY}
+    _elim_set = set(eliminated)
+    integer_vars = frozenset(
+        v.name
+        for v in getattr(model, "_variables", [])
+        if v.name in _elim_set and getattr(v, "var_type", None) in _int_types
+    )
+    recovery = RecoveryMap(defining=all_defining, order=combined_order, integer_vars=integer_vars)
     return AggregationResult(
         reduced_model=current,
         recovery=recovery,

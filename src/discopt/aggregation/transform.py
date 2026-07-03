@@ -348,7 +348,15 @@ def apply_aggregation(model: Any, agg: AggregationSet, prune_bounds: bool = True
         else:
             reduced.maximize(new_obj)
 
-    recovery = RecoveryMap(defining=defining, order=list(eliminated_order))
+    _int_types = {VarType.INTEGER, VarType.BINARY}
+    integer_vars = frozenset(
+        name
+        for name in eliminated_order
+        if getattr(orig_by_name.get(name), "var_type", None) in _int_types
+    )
+    recovery = RecoveryMap(
+        defining=defining, order=list(eliminated_order), integer_vars=integer_vars
+    )
     return ReducedModel(
         model=reduced,
         recovery=recovery,

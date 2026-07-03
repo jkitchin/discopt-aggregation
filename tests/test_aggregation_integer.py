@@ -14,8 +14,9 @@ and the constant term are integral.
 from __future__ import annotations
 
 import discopt.modeling as dm
+import pytest
 
-from discopt.aggregation.api import aggregate
+from discopt.aggregation.api import aggregate, solve
 from discopt.aggregation.incidence import build_incidence
 from discopt.aggregation.testproblems import PROBLEMS
 
@@ -484,3 +485,48 @@ def test_implicit_elimination_skips_integer_block_variables():
 
     with pytest.raises(ValueError, match="no eliminable"):
         eliminate_implicit(build("integer"))
+
+
+# --------------------------------------------------------------------------- #
+# IA4 — integral recovery + dual scope                                        #
+# --------------------------------------------------------------------------- #
+def _ia4_model():
+    m = dm.Model("ia4")
+    i = m.integer("i", lb=0, ub=10)
+    j = m.integer("j", lb=0, ub=30)
+    x = m.continuous("x", lb=-5, ub=5)
+    m.subject_to(j - (i + 3) == 0.0)  # j = i + 3, integrality of one implies the other
+    m.minimize((i - 4.0) ** 2 + x**2 + j)
+    return m
+
+
+def test_integer_recovery_is_integral():
+    """IA4: the recovered eliminated integer is exactly integral (rounded)."""
+    agg = aggregate(_ia4_model(), method="gr", integer_aggregation=True)
+    (elim,) = agg.eliminated  # one of i/j (deterministic matching picks one)
+    assert elim in ("i", "j")
+    assert elim in agg.recovery.integer_vars
+    # feed the kept integer a value consistent with j = i + 3 and check integrality
+    kept, kept_val = ("i", 4.0) if elim == "j" else ("j", 7.0)
+    full = agg.recover_full({kept: kept_val, "x": 0.0})
+    assert float(full[elim]).is_integer()
+    assert full[elim] == (7.0 if elim == "j" else 4.0)
+
+
+def test_recovery_raises_on_nonintegral_integer(monkeypatch):
+    """IA4: a corrupted (non-integral) integer definition raises, never rounds a lie."""
+    from discopt.modeling.core import Constant
+
+    from discopt.aggregation.recovery import RecoveryMap
+
+    rec = RecoveryMap(defining={"j": Constant(7.5)}, order=["j"], integer_vars=frozenset({"j"}))
+    with pytest.raises(AssertionError, match="non-integral"):
+        rec.recover({})
+
+
+def test_duals_unavailable_when_integer_eliminated():
+    """IA4: dual recovery declines (with a reason) if an integer was aggregated."""
+    res = solve(_ia4_model(), method="gr", integer_aggregation=True, recover_duals=True)
+    assert res.duals is not None
+    assert not res.duals.available
+    assert res.duals.reason == "eliminated_integer_variable"

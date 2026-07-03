@@ -633,7 +633,14 @@ soundness property (sampled feasible integer points remain feasible in the
 reduced model, the G2 harness pattern).
 **Files.** `transform.py`, tests.
 
-### IA4. Recovery integrality + duals scope (S)
+### IA4. Recovery integrality + duals scope (S) — ✅ DONE
+
+Recovered eliminated integers are asserted integral and returned rounded (a
+non-integral result raises — it would mean an IA1 rule was violated); a
+`RecoveryMap.integer_vars` field carries which eliminated names are integer,
+set in both transform and the combined api recovery map. Dual recovery declines
+with `reason="eliminated_integer_variable"` when any integer was aggregated.
+3 tests (matching-agnostic recovery, corrupt-map raises, duals unavailable).
 
 **Design.**
 - `RecoveryMap.recover` (or `AggregationResult.recover_full`): for an eliminated

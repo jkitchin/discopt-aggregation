@@ -114,6 +114,21 @@ def _grad(expr: Any, var: str, values: dict[str, Any], cache: dict) -> float | N
 _INF_BOUND = 9.9e19  # below discopt's +-9.999e19 sentinel
 
 
+def _has_integer_eliminated(recovery: Any, model: Any) -> bool:
+    """Whether any eliminated variable is integer/binary (IA4 dual-scope guard)."""
+    if getattr(recovery, "integer_vars", None):
+        return True
+    # Defensive fallback if the recovery map predates IA4: check the model types.
+    from discopt.modeling.core import VarType
+
+    order = set(getattr(recovery, "order", []))
+    int_types = {VarType.INTEGER, VarType.BINARY}
+    return any(
+        v.name in order and getattr(v, "var_type", None) in int_types
+        for v in getattr(model, "_variables", [])
+    )
+
+
 def _objective_sign(model: Any) -> float:
     """``+1`` for a minimise objective, ``-1`` for maximise.
 
@@ -275,6 +290,11 @@ def recover_duals(reduced: Any, reduced_result: Any) -> DualRecovery:
         return DualRecovery(available=False, reason="no_aggregation_set")
     model = agg.incidence.model
 
+    # IA4: KKT multipliers are not defined over eliminated integer/branching
+    # variables — do not attempt duals when any were aggregated.
+    if _has_integer_eliminated(reduced.recovery, model):
+        return DualRecovery(available=False, reason="eliminated_integer_variable")
+
     rx = getattr(reduced_result, "x", None)
     rduals = getattr(reduced_result, "constraint_duals", None)
     if not isinstance(rx, dict) or not isinstance(rduals, dict):
@@ -338,6 +358,10 @@ def recover_duals_from_result(result: Any, reduced_result: Any) -> DualRecovery:
     base = getattr(result, "base_model", None)
     if base is None:
         return DualRecovery(available=False, reason="no_base_model")
+
+    # IA4: no duals over eliminated integer/branching variables.
+    if _has_integer_eliminated(result.recovery, base):
+        return DualRecovery(available=False, reason="eliminated_integer_variable")
 
     rx = getattr(reduced_result, "x", None)
     rduals = getattr(reduced_result, "constraint_duals", None)
