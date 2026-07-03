@@ -282,3 +282,87 @@ def test_degree_k_helper_rejects_small_k():
 
     with pytest.raises(ValueError, match="k >= 2"):
         degree_k_aggregation_set(build_incidence(_degree_ladder_model()), 1)
+
+
+def test_block_greedy_uses_induced_subgraph_not_full_incidence():
+    """N3: a cyclic block's greedy tear cannot steal a variable from another block.
+
+    ``a`` is defined by the singleton ``a == 5``; the dense constraint
+    ``v0+v1+a == 1`` also contains ``a``.  Algorithm 2 runs greedy on the block's
+    induced subgraph, so ``a`` is eliminated via its singleton, not the dense
+    constraint, and the Theorem-2 stats stay consistent.
+    """
+    import discopt.modeling as dm
+
+    from discopt.aggregation.strategies import aggregation_set
+
+    m = dm.Model("n3")
+    v0 = m.continuous("v0", lb=-9, ub=9)
+    v1 = m.continuous("v1", lb=-9, ub=9)
+    a = m.continuous("a", lb=-9, ub=9)
+    m.subject_to(v0 + v1 + a - 1 == 0.0)  # dense (cid 0)
+    m.subject_to(v0 + v1 - 2 == 0.0)  # cyclic with cid 0 over {v0, v1}
+    m.subject_to(a - 5 == 0.0)  # singleton defining a (cid 2)
+    m.minimize(v0**2 + v1**2)
+    agg = aggregation_set(m, method="lm")
+    elim = {e.var: e.cid for e in agg.eliminations}
+    assert elim.get("a") == 2, "a must be defined by its singleton constraint, not the dense one"
+    # Theorem 2 chain holds
+    s = agg.stats
+    assert s["n_block"] <= s["n_agg"] <= s["n_match"]
+
+
+def test_exact_tear_falls_back_to_greedy_on_nonoptimal_milp(monkeypatch):
+    """N2: a non-optimal feedback-set MILP falls back to greedy, never a bad tear."""
+    import discopt.modeling as dm
+
+    from discopt.aggregation.api import aggregate
+
+    class _Bad:
+        status = "iteration_limit"
+        x: dict = {}
+
+    import discopt.aggregation.strategies as strat
+    monkeypatch.setattr(strat, "_EXACT_TEAR_CAP", 0)  # force the MILP path
+    monkeypatch.setattr(dm.Model, "solve", lambda self, **k: _Bad())
+    # a cyclic model so exact tearing engages
+    m = dm.Model("n2")
+    x = m.continuous("x", lb=-9, ub=9)
+    y = m.continuous("y", lb=-9, ub=9)
+    t = m.continuous("t", lb=-9, ub=9)
+    m.subject_to(x - (0.5 * y + 1) == 0.0)
+    m.subject_to(y - (0.5 * x + 2) == 0.0)
+    m.subject_to(t - (x + 1) == 0.0)
+    m.minimize(x**2 + y**2 + t**2)
+    # must not raise; greedy fallback yields a valid (lower-triangular) result
+    agg = aggregate(m, method="lm", tearing="exact")
+    assert agg.n_eliminated >= 1
+
+
+def test_degree_filter_counts_noncandidate_variables():
+    """N4: degree filters count all variables, not just aggregation candidates.
+
+    ``y = x + i`` with an integer ``i`` is a three-variable constraint, so the
+    degree-2 filter must reject it — otherwise the integer passenger rides into
+    every target constraint, violating the structure-preserving claim.
+    """
+    import discopt.modeling as dm
+
+    from discopt.aggregation.api import aggregate
+
+    m = dm.Model("n4")
+    x = m.continuous("x", lb=-9, ub=9)
+    y = m.continuous("y", lb=-9, ub=9)
+    i = m.integer("i", lb=0, ub=5)
+    m.subject_to(y - (x + i) == 0.0)
+    m.minimize(x**2 + y**2 + i)
+    assert aggregate(m, method="d2", recursive=False).eliminated == []
+    assert aggregate(m, method="ld2", recursive=False).eliminated == []
+
+    # a genuine two-variable constraint is still eliminated
+    m2 = dm.Model("ok")
+    a = m2.continuous("a", lb=-9, ub=9)
+    b = m2.continuous("b", lb=-9, ub=9)
+    m2.subject_to(b - (a + 1) == 0.0)
+    m2.minimize(a**2 + b**2)
+    assert aggregate(m2, method="d2", recursive=False).eliminated == ["a"]

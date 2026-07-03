@@ -60,7 +60,13 @@ def find_cycle(nodes: list[str], succ: dict[str, list[str]]) -> list[str] | None
 
 
 def _solve_min_cover(nodes: list[str], cycles: list[list[str]]) -> set[str]:
-    """Minimum set of ``nodes`` hitting every cycle in ``cycles`` (discopt MILP)."""
+    """Minimum set of ``nodes`` hitting every cycle in ``cycles`` (discopt MILP).
+
+    Raises :class:`RuntimeError` if the MILP does not solve to optimality — a
+    suboptimal incumbent would silently break the *maximum*-acyclic-subset
+    guarantee.  The caller (:func:`~discopt.aggregation.strategies._exact_tear`)
+    catches this and falls back to the greedy tear, which never degrades.
+    """
     import discopt.modeling as dm
 
     m = dm.Model("fvs")
@@ -69,6 +75,9 @@ def _solve_min_cover(nodes: list[str], cycles: list[list[str]]) -> set[str]:
         m.subject_to(sum(r[v] for v in cyc) >= 1)
     m.minimize(sum(r.values()))
     result = m.solve()
+    status = str(getattr(result, "status", "")).lower()
+    if "optimal" not in status:
+        raise RuntimeError(f"minimum-feedback-set MILP not optimal (status={status!r})")
     x = result.x
     return {v for v in nodes if round(float(x[r[v].name])) == 1}
 

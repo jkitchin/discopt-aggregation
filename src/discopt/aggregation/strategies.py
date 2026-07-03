@@ -107,7 +107,9 @@ class AggregationSet:
 # --------------------------------------------------------------------------- #
 # core routines                                                                #
 # --------------------------------------------------------------------------- #
-def _greedy(inc: IncidenceModel, cids: list[int]) -> dict[int, str]:
+def _greedy(
+    inc: IncidenceModel, cids: list[int], restrict: set[str] | None = None
+) -> dict[int, str]:
     """Greedy aggregation (paper Algorithm 1).
 
     Walk the constraints in the given order; for each, eliminate the first
@@ -115,15 +117,25 @@ def _greedy(inc: IncidenceModel, cids: list[int]) -> dict[int, str]:
     constraint.  Accumulating *all* of a chosen constraint's variables into the
     used-set ``S`` keeps the induced incidence lower triangular by construction.
 
+    When ``restrict`` is given (Algorithm 2 step 6b: greedy *on a block*), only
+    variables in that set are eligible and only they enter ``S`` — so a block's
+    tear cannot "steal" a variable matched in another block, which would collapse
+    to a duplicate and corrupt the Theorem-2 bookkeeping.
+
     Returns a ``{cid: var}`` matching.
     """
     matching: dict[int, str] = {}
     used: set[str] = set()
     for cid in cids:
-        for x in sorted(inc.constraint_linear_vars(cid)):  # deterministic
+        lin = inc.constraint_linear_vars(cid)
+        allv = inc.constraint_vars(cid)
+        if restrict is not None:
+            lin = lin & restrict
+            allv = allv & restrict
+        for x in sorted(lin):  # deterministic
             if x not in used:
                 matching[cid] = x
-                used |= inc.constraint_vars(cid)  # every var in this constraint
+                used |= allv  # every (in-scope) var in this constraint
                 break
     return matching
 
@@ -268,8 +280,8 @@ def _exact_tear(inc: IncidenceModel, block: list[tuple[int, str]]) -> dict[int, 
             from discopt.aggregation.tearing import max_acyclic_subset_milp
 
             keep = max_acyclic_subset_milp(block_vars, deps)
-        except Exception:  # pragma: no cover - defensive fallback, never degrade
-            return _greedy(inc, [cid for cid, _ in block])
+        except Exception:  # non-optimal MILP or solver error: never degrade
+            return _greedy(inc, [cid for cid, _ in block], restrict=var_set)
     return {cid_of[v]: v for v in keep}
 
 
@@ -353,7 +365,10 @@ def linear_matching_aggregation_set(
         elif getattr(inc, "tearing", "greedy") == "exact":
             m_reduced.update(_exact_tear(inc, block))
         else:
-            m_reduced.update(_greedy(inc, [cid for cid, _ in block]))
+            # Algorithm 2 step 6b: greedy on the block's induced subgraph, so it
+            # cannot match a variable belonging to another block.
+            block_vars = {v for _cid, v in block}
+            m_reduced.update(_greedy(inc, [cid for cid, _ in block], restrict=block_vars))
 
     result = _finalize(m_reduced, inc, method)
     result.stats = {
@@ -361,6 +376,11 @@ def linear_matching_aggregation_set(
         "n_block": len(blocks),
         "n_agg": result.n,
     }
+    # Theorem 2 chain n_block <= n_agg <= n_match holds for the algorithmic
+    # matching (before any max_fill / guard drops in _finalize reduce n_agg).
+    assert result.stats["n_block"] <= len(m_reduced) <= result.stats["n_match"], (
+        f"Theorem-2 bound violated: {result.stats}"
+    )
     return result
 
 
@@ -374,20 +394,30 @@ def greedy_aggregation_set(inc: IncidenceModel) -> AggregationSet:
 # constraint filters (paper Table 2) + filtered strategies                     #
 # --------------------------------------------------------------------------- #
 def _filter_fixed_variable(inc: IncidenceModel) -> list[int]:
-    """``y = a``: exactly one variable, appearing linearly."""
+    """``y = a``: exactly one variable *total*, appearing linearly.
+
+    The total count includes non-candidate variables (integers, arrays), so a
+    constraint like ``y = a + i`` (integer ``i``) is not treated as fixed-variable.
+    """
     return [
         cid
         for cid in inc.constraints
-        if len(inc.constraint_vars(cid)) == 1 and len(inc.constraint_linear_vars(cid)) == 1
+        if inc.constraint_total_degree(cid) == 1 and len(inc.constraint_linear_vars(cid)) == 1
     ]
 
 
 def _filter_degree_k(inc: IncidenceModel, k: int) -> list[int]:
-    """At most ``k`` variables, at least one of them linear (``y = f(x, ...)``)."""
+    """At most ``k`` variables *total*, at least one of them linear (``y = f(x, ...)``).
+
+    Counts every variable in the constraint (candidates and non-candidates), so a
+    non-candidate passenger (an integer or array variable) is not silently ignored
+    — matching the paper's degree semantics and the structure-preserving claim
+    that no remaining constraint gains variables.
+    """
     return [
         cid
         for cid in inc.constraints
-        if len(inc.constraint_vars(cid)) <= k and len(inc.constraint_linear_vars(cid)) >= 1
+        if inc.constraint_total_degree(cid) <= k and len(inc.constraint_linear_vars(cid)) >= 1
     ]
 
 
@@ -406,7 +436,7 @@ def _filter_linear_degree2(inc: IncidenceModel) -> list[int]:
     return [
         cid
         for cid in inc.constraints
-        if len(inc.constraint_vars(cid)) == 2 and len(inc.constraint_linear_vars(cid)) == 2
+        if inc.constraint_total_degree(cid) == 2 and len(inc.constraint_linear_vars(cid)) == 2
     ]
 
 
@@ -419,7 +449,7 @@ def _filter_equal_coefficient(inc: IncidenceModel) -> list[int]:
     out: list[int] = []
     for cid in inc.constraints:
         lin = inc.constraint_linear_vars(cid)
-        if len(lin) != 2 or len(inc.constraint_vars(cid)) != 2:
+        if len(lin) != 2 or inc.constraint_total_degree(cid) != 2:
             continue
         c1, c2 = (inc.linear_coeff[(cid, v)] for v in lin)
         if abs(abs(c1) - abs(c2)) <= 1e-12 * max(1.0, abs(c1), abs(c2)):

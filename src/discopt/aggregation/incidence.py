@@ -140,6 +140,7 @@ class IncidenceModel:
     linear_graph: BipartiteGraph = field(default_factory=BipartiteGraph)
     linear_coeff: dict[tuple[int, str], float] = field(default_factory=dict)
     var_degree: dict[str, int] = field(default_factory=dict)
+    total_var_count: dict[int, int] = field(default_factory=dict)
     pivot_tol: float = 0.0
     max_fill: float | None = None
     tearing: str = "greedy"  # cyclic-block tear: "greedy" or "exact"
@@ -167,6 +168,16 @@ class IncidenceModel:
     def constraint_linear_vars(self, cid: int) -> set[str]:
         """Candidate variables incident to ``cid`` via a linear edge."""
         return self.linear_graph.neighbors_of_left(cid)
+
+    def constraint_total_degree(self, cid: int) -> int:
+        """Count of *all* variables in ``cid`` (candidate or not).
+
+        Degree filters (paper Table 2) bound the *total* number of variables in a
+        defining constraint — ``y = x + i`` with an integer ``i`` is a three-
+        variable constraint even though only ``x, y`` are aggregation candidates.
+        Falls back to the candidate count if the total was not recorded.
+        """
+        return self.total_var_count.get(cid, len(self.constraint_vars(cid)))
 
 
 def build_incidence(
@@ -238,6 +249,10 @@ def build_incidence(
         if not present:
             continue
         inc.constraints[cid] = c
+        # Total variable count (candidates and non-candidates alike) for the
+        # degree filters, so e.g. y = x + i (integer i) counts as three variables.
+        all_names, _ = collect_variable_names(c.body)
+        inc.total_var_count[cid] = len(all_names)
         lin = linear_vars(c, candidate_names, pivot_tol=pivot_tol)
         for name in present:
             inc.graph.add_edge(cid, name)
