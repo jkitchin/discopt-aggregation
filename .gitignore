@@ -7,5 +7,6 @@ __pycache__/
 build/
 dist/
 .venv/
-.claude/
+.claude/scheduled_tasks.lock
+.claude/settings.local.json
 results/
