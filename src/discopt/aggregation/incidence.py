@@ -38,20 +38,81 @@ from discopt.modeling.core import Constraint, VarType
 from discopt.aggregation.exprwalk import affine_coefficients, collect_variable_names
 from discopt.aggregation.matching import BipartiteGraph
 
+_INTEGER_TYPES = (VarType.INTEGER, VarType.BINARY)
 
-def candidate_variables(model: Any) -> dict[str, Any]:
-    """Map name -> Variable for every scalar continuous variable in ``model``.
 
-    These are the only variables eligible for explicit aggregation.
+def candidate_variables(model: Any, integer_aggregation: bool = False) -> dict[str, Any]:
+    """Map name -> Variable for every scalar variable eligible for aggregation.
+
+    Scalar *continuous* variables are always candidates.  When
+    ``integer_aggregation`` is True, scalar *integer* and *binary* variables are
+    admitted too (IA1); their edges are then further filtered by the integrality-
+    implication rule in :func:`linear_vars`, so admitting them here is necessary
+    but not sufficient for an eliminable edge.  With the flag off (the default),
+    integer/binary variables are excluded, so the candidate set — and hence the
+    whole pipeline — is byte-identical to the continuous-only behaviour.
     """
     candidates: dict[str, Any] = {}
     for v in getattr(model, "_variables", []):
-        if getattr(v, "var_type", None) != VarType.CONTINUOUS:
-            continue
         if int(getattr(v, "size", 1)) != 1:
             continue
-        candidates[v.name] = v
+        vt = getattr(v, "var_type", None)
+        if vt == VarType.CONTINUOUS:
+            candidates[v.name] = v
+        elif integer_aggregation and vt in _INTEGER_TYPES:
+            candidates[v.name] = v
     return candidates
+
+
+def integer_variable_names(model: Any) -> frozenset[str]:
+    """Names of every scalar integer/binary variable in ``model``.
+
+    Tracked regardless of the ``integer_aggregation`` flag: the integrality-
+    implication filter (IA1) needs to know which of a constraint's *other*
+    variables are integer, whether or not they are aggregation candidates.
+    """
+    names: set[str] = set()
+    for v in getattr(model, "_variables", []):
+        if int(getattr(v, "size", 1)) != 1:
+            continue
+        if getattr(v, "var_type", None) in _INTEGER_TYPES:
+            names.add(v.name)
+    return frozenset(names)
+
+
+def _integer_edge_admissible(
+    pivot_name: str,
+    pivot_coeff: float,
+    const: float,
+    coeffs: dict[str, float | None],
+    integer_names: frozenset[str],
+    int_tol: float = 1e-9,
+) -> bool:
+    """Whether integer ``pivot_name`` may be eliminated via this affine body.
+
+    Enforces the integrality-implication rule (Achterberg et al. 2020 §4;
+    Zhang & Yuan 2024): the body is fully affine, the pivot coefficient is
+    ``±1``, every *other* participating variable is integer/binary, and every
+    other coefficient and the constant term are integral.  Only then is
+    integrality of the eliminated variable implied by the surviving ones, so
+    substituting it back always yields an integer.
+    """
+    # Fully affine: no variable may participate nonlinearly (None coefficient).
+    if any(c is None for c in coeffs.values()):
+        return False
+    # Pivot coefficient must be a unit (the general "pivot divides all" rule is
+    # deliberately scoped to ±1).
+    if abs(abs(pivot_coeff) - 1.0) > int_tol:
+        return False
+    for name, coeff in coeffs.items():
+        if name == pivot_name:
+            continue
+        if name not in integer_names:
+            return False  # a continuous companion breaks the implication
+        assert coeff is not None  # guaranteed by the None-check above
+        if abs(coeff - round(coeff)) > int_tol:
+            return False  # non-integral coefficient
+    return abs(const - round(const)) <= int_tol
 
 
 def all_vars(constraint: Constraint, candidate_names: set[str]) -> set[str]:
@@ -76,7 +137,10 @@ def all_vars(constraint: Constraint, candidate_names: set[str]) -> set[str]:
 
 
 def linear_vars(
-    constraint: Constraint, candidate_names: set[str], pivot_tol: float = 0.0
+    constraint: Constraint,
+    candidate_names: set[str],
+    pivot_tol: float = 0.0,
+    integer_names: frozenset[str] = frozenset(),
 ) -> dict[str, float]:
     """Candidate variables that participate *linearly* (paper ``linear_vars``).
 
@@ -95,6 +159,12 @@ def linear_vars(
     Achterberg et al. flag for aggregation.  The default ``0.0`` disables the
     test (exact paper behaviour); :func:`build_incidence` applies a nonzero
     default.
+
+    ``integer_names`` are the model's integer/binary variables (IA1).  A
+    *continuous* candidate keeps the rule above unchanged.  An *integer*
+    candidate (its name in ``integer_names``) is admitted only when integrality
+    of the eliminated variable is implied — see :func:`_integer_edge_admissible`
+    — so an integer edge never introduces a fractional value on back-substitution.
     """
     present = all_vars(constraint, candidate_names)
     out: dict[str, float] = {}
@@ -102,10 +172,15 @@ def linear_vars(
     # (O(#distinct nodes)), replacing an O(tree) walk per candidate — the walk that
     # took minutes on substitution-expanded bodies whose shared DAG is small.
     extracted = affine_coefficients(constraint.body)
+    const: float = 0.0 if extracted is None else extracted[0]
     coeffs: dict[str, float | None] = {} if extracted is None else extracted[1]
     for name in present:
         coeff = coeffs.get(name)
         if coeff is None or coeff == 0.0 or not np.isfinite(coeff):
+            continue
+        if name in integer_names and not _integer_edge_admissible(
+            name, coeff, const, coeffs, integer_names
+        ):
             continue
         out[name] = float(coeff)
     if pivot_tol > 0.0 and out:
@@ -150,6 +225,7 @@ class IncidenceModel:
     tearing: str = "greedy"  # cyclic-block tear: "greedy" or "exact"
     decomposable: bool = False  # local-search matching for higher n_block (E4)
     order: str = "index"  # greedy candidate order: "index" or "min_fill" (R1)
+    integer_names: frozenset[str] = frozenset()  # all scalar integer/binary vars (IA1)
 
     def fill_estimate(self, cid: int, var: str) -> int:
         """Estimated new Jacobian incidences from eliminating ``var`` via ``cid``.
@@ -192,6 +268,7 @@ def build_incidence(
     tearing: str = "greedy",
     decomposable: bool = False,
     order: str = "index",
+    integer_aggregation: bool = False,
 ) -> IncidenceModel:
     """Build the bipartite incidence graphs for ``model``.
 
@@ -205,8 +282,9 @@ def build_incidence(
     :meth:`IncidenceModel.fill_estimate`).  ``tearing`` (``"greedy"`` or
     ``"exact"``) selects how cyclic blocks are torn in linear-matching.
     """
-    candidates = candidate_variables(model)
+    candidates = candidate_variables(model, integer_aggregation=integer_aggregation)
     candidate_names = set(candidates)
+    integer_names = integer_variable_names(model)
 
     inc = IncidenceModel(
         model=model,
@@ -216,6 +294,7 @@ def build_incidence(
         tearing=tearing,
         decomposable=decomposable,
         order=order,
+        integer_names=integer_names,
     )
 
     # Total degree of each candidate across every constraint and the objective.
@@ -260,7 +339,7 @@ def build_incidence(
         # degree filters, so e.g. y = x + i (integer i) counts as three variables.
         all_names, _ = collect_variable_names(c.body)
         inc.total_var_count[cid] = len(all_names)
-        lin = linear_vars(c, candidate_names, pivot_tol=pivot_tol)
+        lin = linear_vars(c, candidate_names, pivot_tol=pivot_tol, integer_names=integer_names)
         for name in present:
             inc.graph.add_edge(cid, name)
             if name in lin:
@@ -274,6 +353,7 @@ __all__ = [
     "IncidenceModel",
     "build_incidence",
     "candidate_variables",
+    "integer_variable_names",
     "all_vars",
     "linear_vars",
 ]

@@ -486,7 +486,34 @@ Zhang & Yuan 2024): an integer variable `y` may be eliminated via
 (The general divisibility condition — pivot divides all coefficients — is
 deliberately restricted to ±1; note it as a scoped-out refinement.)
 
-### IA1. Integer candidates + integrality-implication filter (M)
+### IA1. Integer candidates + integrality-implication filter (M) — ✅ DONE
+
+**Result.** Added the opt-in integer candidate path behind `integer_aggregation=False`.
+`incidence.candidate_variables(model, integer_aggregation=False)` now also admits
+scalar `INTEGER`/`BINARY` variables when the flag is on; a new
+`incidence.integer_variable_names(model)` collects every scalar integer/binary name
+(tracked regardless of the flag) and is stored on `IncidenceModel.integer_names`.
+`incidence.linear_vars` gained an `integer_names` argument and a per-integer-candidate
+gate (`_integer_edge_admissible`): an integer candidate is admitted only when the SC1
+`affine_coefficients` decomposition is fully affine (no `None` coefficients anywhere),
+the pivot `|coeff| == 1 ± 1e-9`, every *other* participating variable is in
+`integer_names`, and every other coefficient and the constant term are integral (1e-9).
+Continuous candidates keep the exact `pivot_tol` rule unchanged, so with the flag off
+the whole pipeline is byte-identical. `integer_aggregation` is threaded through
+`build_incidence` → `aggregate` → `solve` (T1 signature-parity test passes). No strategy
+change was needed: the edge filter alone makes `ld1` eliminate `y == 3`, `ecd2/ld2/d2`
+admit integer `y = ±x + c` pairs, and `d2`'s nonlinear-`f(x)` case never admit an integer
+target (a nonlinear body fails the affine requirement). **Validation.** New
+`tests/test_aggregation_integer.py` (12 tests, all failing pre-fix): `j = i + 3` (both
+integer) eliminates 1 var with the flag / 0 without; edge-filter rejections each as their
+own test (`y = x + i` continuous-`x`; eliminating `i` from `y = 2*i` at pivot 2 while `y`
+itself stays admissible; `y = i + 0.5` fractional constant; `y = 0.5*i + z` fractional
+coeff); binary `b = i1 + i2` admissible-by-rule; `y = x**2` integer target rejected while
+its continuous analogue is admitted; a recovery round-trip reconstructing the eliminated
+integer from the kept one; and a no-regression sweep asserting the flag leaves the whole
+`PROBLEMS` eliminated lists (incl. `unit_selection` binaries, which live only in
+inequalities) untouched for `ld1/d2/lm`. Full suite 427 passed, 1 skipped. Files touched:
+`incidence.py`, `api.py`, `tests/test_aggregation_integer.py`.
 
 **Design.**
 - `candidate_variables(model, integer_aggregation=False)`: when the flag is on,

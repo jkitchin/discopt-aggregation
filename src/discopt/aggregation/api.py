@@ -124,6 +124,7 @@ def aggregate(
     order: str = "index",
     max_def_nodes: int | None = None,
     max_condition: float | None = None,
+    integer_aggregation: bool = False,
 ) -> AggregationResult:
     """Aggregate variables of ``model`` using ``method``.
 
@@ -167,6 +168,13 @@ def aggregate(
         max_condition: optional cap on the cumulative pivot amplification along the
             composed elimination chain; over-cap eliminations are dropped (D2).
             ``None`` (default) disables the cap.
+        integer_aggregation: when True (default False), also admit scalar
+            integer/binary variables as aggregation candidates, subject to the
+            integrality-implication rule (IA1): the defining constraint must be
+            fully affine, the pivot coefficient ``±1``, every other participating
+            variable integer/binary, and every other coefficient and the constant
+            integral.  With the flag off, behaviour is byte-identical to the
+            continuous-only pipeline.
 
     Returns:
         An :class:`AggregationResult`.  If no variable can be eliminated, the
@@ -201,6 +209,7 @@ def aggregate(
                 tearing=tearing,
                 decomposable=decomposable,
                 order=order,
+                integer_aggregation=integer_aggregation,
             )
             agg = resolve_strategy(stage)(inc)
             if preserve_target_linearity:
@@ -289,6 +298,7 @@ def solve(
     order: str = "index",
     max_def_nodes: int | None = None,
     max_condition: float | None = None,
+    integer_aggregation: bool = False,
     recover_duals: bool = False,
     **solve_kwargs: Any,
 ) -> AggregatedSolveResult:
@@ -319,6 +329,7 @@ def solve(
         order=order,
         max_def_nodes=max_def_nodes,
         max_condition=max_condition,
+        integer_aggregation=integer_aggregation,
     )
     # A fixed-variable elimination proved the model infeasible (C1): report it
     # instead of solving a reduced model that dropped the violated bound.
