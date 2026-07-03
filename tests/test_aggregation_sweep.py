@@ -38,3 +38,18 @@ def test_sweep_reports_iterations_for_converged():
     # Converged instances report a positive average iteration count.
     assert results["original"].avg_iterations > 0
     assert results["d2"].avg_iterations > 0
+
+
+def test_per_cell_retention_and_virtual_best():
+    """P1: sweep retains per-cell results; virtual_best dominates every method."""
+    from discopt.aggregation.sweep import reliability_sweep, virtual_best
+    from discopt.aggregation.testproblems import REACTION_DIFFUSION
+
+    res = reliability_sweep(REACTION_DIFFUSION, methods=("ld1", "d2"), points=3)
+    # every method retains one cell per grid point, and aggregate counts match
+    for r in res.values():
+        assert len(r.cells) == 9
+        assert r.n_converged == sum(1 for c in r.cells if c.converged)
+    vb = virtual_best(res)
+    assert vb.n_instances == 9
+    assert vb.n_converged >= max(r.n_converged for r in res.values())

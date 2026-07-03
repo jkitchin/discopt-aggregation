@@ -16,17 +16,33 @@ uniform 100% here is expected, not a null result.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import csv
+from dataclasses import dataclass, field
 from statistics import mean
-from typing import Any
+from typing import Any, Mapping
 
 from discopt.aggregation.api import aggregate
 from discopt.aggregation.benchmark import _local_solve
 
 
 @dataclass
+class CellResult:
+    """Outcome of one (parameter-point, method) instance in a sweep."""
+
+    params: dict[str, float]
+    converged: bool
+    iterations: int  # -1 if not converged
+    wall_time: float
+
+
+@dataclass
 class SweepResult:
-    """Convergence statistics for one method over a parameter grid."""
+    """Convergence statistics for one method over a parameter grid.
+
+    ``cells`` retains every per-grid-point outcome (for the paper's Figures 9-11
+    convergence grids and :func:`virtual_best`); the scalar fields are aggregates
+    over it.
+    """
 
     method: str
     n_instances: int
@@ -34,6 +50,7 @@ class SweepResult:
     pct_converged: float
     avg_iterations: float  # mean over converged instances
     avg_wall_time: float  # mean over converged instances (seconds)
+    cells: list[CellResult] = field(default_factory=list)
 
 
 def _solve_instance(model: Any, method: str) -> tuple[bool, int, float]:
@@ -65,26 +82,82 @@ def reliability_sweep(
     grid = problem.sweep_grid(points)
     results: dict[str, SweepResult] = {}
     for method in ("original", *methods):
-        converged = 0
-        iters: list[int] = []
-        walls: list[float] = []
+        cells: list[CellResult] = []
         for params in grid:
             model = problem.build(**params)
             ok, it, wt = _solve_instance(model, method)
-            if ok:
-                converged += 1
-                iters.append(it)
-                walls.append(wt)
-        n = len(grid)
-        results[method] = SweepResult(
-            method=method,
-            n_instances=n,
-            n_converged=converged,
-            pct_converged=100.0 * converged / n if n else 0.0,
-            avg_iterations=mean(iters) if iters else 0.0,
-            avg_wall_time=mean(walls) if walls else 0.0,
-        )
+            cells.append(CellResult(params=dict(params), converged=ok, iterations=it, wall_time=wt))
+        results[method] = _summarize(method, cells)
     return results
 
 
-__all__ = ["SweepResult", "reliability_sweep"]
+def _summarize(method: str, cells: list[CellResult]) -> SweepResult:
+    conv = [c for c in cells if c.converged]
+    n = len(cells)
+    return SweepResult(
+        method=method,
+        n_instances=n,
+        n_converged=len(conv),
+        pct_converged=100.0 * len(conv) / n if n else 0.0,
+        avg_iterations=mean([c.iterations for c in conv]) if conv else 0.0,
+        avg_wall_time=mean([c.wall_time for c in conv]) if conv else 0.0,
+        cells=cells,
+    )
+
+
+def virtual_best(results: Mapping[str, SweepResult]) -> SweepResult:
+    """The paper's Fig-12 *virtual best*: per grid point, the best method's outcome.
+
+    A cell converges in the virtual best if *any* method converges there; its
+    iteration count is the minimum over the methods that converged.  Requires the
+    input :class:`SweepResult`s to share the same grid order (they do when produced
+    by one :func:`reliability_sweep`).  By construction the virtual best converges
+    on at least as many instances as any single method.
+    """
+    methods = list(results.values())
+    if not methods:
+        return _summarize("virtual_best", [])
+    n = methods[0].n_instances
+    if any(m.n_instances != n for m in methods):
+        raise ValueError("virtual_best requires all methods to share one grid")
+    cells: list[CellResult] = []
+    for i in range(n):
+        row = [m.cells[i] for m in methods]
+        conv = [c for c in row if c.converged]
+        if conv:
+            best = min(conv, key=lambda c: c.iterations)
+            cells.append(
+                CellResult(
+                    params=best.params,
+                    converged=True,
+                    iterations=best.iterations,
+                    wall_time=best.wall_time,
+                )
+            )
+        else:
+            cells.append(
+                CellResult(params=row[0].params, converged=False, iterations=-1, wall_time=0.0)
+            )
+    return _summarize("virtual_best", cells)
+
+
+def sweep_to_csv(results: Mapping[str, SweepResult], path: str) -> None:
+    """Write every per-cell outcome to ``path`` (columns: method, params…, converged…)."""
+    rows = [(m, c) for m, res in results.items() for c in res.cells]
+    param_keys = sorted({k for _m, c in rows for k in c.params})
+    with open(path, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["method", *param_keys, "converged", "iterations", "wall_time"])
+        for m, c in rows:
+            w.writerow(
+                [
+                    m,
+                    *[c.params.get(k, "") for k in param_keys],
+                    int(c.converged),
+                    c.iterations,
+                    c.wall_time,
+                ]
+            )
+
+
+__all__ = ["SweepResult", "CellResult", "reliability_sweep", "virtual_best", "sweep_to_csv"]

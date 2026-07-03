@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Any
 
+import numpy as np
+
 from discopt.aggregation.api import aggregate
 from discopt.aggregation.metrics import model_structure
 from discopt.aggregation.scalarize import scalarize_model
@@ -103,4 +105,56 @@ def benchmark_model(
     return rows
 
 
-__all__ = ["BenchmarkRow", "benchmark_model"]
+def callback_breakdown(model: Any, method: str = "original", repeats: int = 20) -> dict[str, float]:
+    """Per-evaluation cost breakdown across the NLP callbacks (Table 6 analogue, P3).
+
+    The paper's Table 6 reports the *fraction of solve time* spent in function,
+    Jacobian, and Hessian evaluation.  POUNCE's result object exposes no such
+    breakdown (a documented gap; see the parity plan), so this measures the
+    complementary, solver-independent quantity: the wall time of each evaluator
+    callback (objective, gradient, Jacobian, Lagrangian Hessian) at a sample
+    point, averaged over ``repeats`` calls, as fractions of their total.  It
+    reproduces the paper's qualitative finding — that aggressive aggregation
+    (``gr``/``lm``) shifts cost sharply toward Hessian evaluation — without
+    needing solver-internal timers.  ``method="original"`` measures the input
+    model; any aggregation method measures its reduced model.
+
+    Returns ``{"func", "grad", "jac", "hess", "hess_over_func"}`` (the first four
+    are fractions summing to 1; the last is the Hessian/function cost ratio).
+    """
+    from discopt.solvers.nlp_pounce import NLPEvaluator
+
+    target = model if method == "original" else aggregate(model, method=method).reduced_model
+    ev = NLPEvaluator(target)
+    lb, ub = ev.variable_bounds
+    x = np.clip(0.5 * (np.clip(lb, -100, 100) + np.clip(ub, -100, 100)), -100, 100)
+    n_con = ev.n_constraints() if callable(ev.n_constraints) else ev.n_constraints
+    lam = np.ones(int(n_con))
+
+    # Warm up JIT compilation so we time steady-state evaluation, not tracing.
+    ev.evaluate_objective(x)
+    ev.evaluate_gradient(x)
+    ev.evaluate_jacobian_values(x)
+    ev.evaluate_lagrangian_hessian(x, 1.0, lam)
+
+    def _time(fn: Any) -> float:
+        t0 = perf_counter()
+        for _ in range(repeats):
+            fn()
+        return perf_counter() - t0
+
+    t_func = _time(lambda: ev.evaluate_objective(x))
+    t_grad = _time(lambda: ev.evaluate_gradient(x))
+    t_jac = _time(lambda: ev.evaluate_jacobian_values(x))
+    t_hess = _time(lambda: ev.evaluate_lagrangian_hessian(x, 1.0, lam))
+    total = t_func + t_grad + t_jac + t_hess or 1.0
+    return {
+        "func": t_func / total,
+        "grad": t_grad / total,
+        "jac": t_jac / total,
+        "hess": t_hess / total,
+        "hess_over_func": t_hess / t_func if t_func else float("inf"),
+    }
+
+
+__all__ = ["BenchmarkRow", "benchmark_model", "callback_breakdown"]

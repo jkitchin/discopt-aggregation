@@ -33,7 +33,7 @@ graph kernel can be used (and tested) standalone.
 
 from __future__ import annotations
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 from discopt.aggregation.api import (
     AggregatedSolveResult,
@@ -41,7 +41,7 @@ from discopt.aggregation.api import (
     aggregate,
     solve,
 )
-from discopt.aggregation.benchmark import BenchmarkRow, benchmark_model
+from discopt.aggregation.benchmark import BenchmarkRow, benchmark_model, callback_breakdown
 from discopt.aggregation.derivatives import differentiate_expression
 from discopt.aggregation.diagnostics import (
     StructuralDiagnosis,
@@ -122,11 +122,18 @@ from discopt.aggregation.strategies import (
     Elimination,
     aggregation_set,
 )
-from discopt.aggregation.sweep import SweepResult, reliability_sweep
+from discopt.aggregation.sweep import (
+    CellResult,
+    SweepResult,
+    reliability_sweep,
+    sweep_to_csv,
+    virtual_best,
+)
 from discopt.aggregation.tearing import find_cycle, max_acyclic_subset_milp
 from discopt.aggregation.testproblems import (
     PROBLEMS,
     TestProblem,
+    cstr_dynamic,
     gas_pipeline,
     reaction_diffusion,
     recycle_loop,
@@ -219,12 +226,17 @@ __all__ = [
     "unit_selection",
     "gas_pipeline",
     "recycle_loop",
+    "cstr_dynamic",
     # runtime benchmark (S2)
     "benchmark_model",
     "BenchmarkRow",
-    # reliability sweep (S3)
+    "callback_breakdown",
+    # reliability sweep (S3) + per-cell / virtual-best (P1)
     "reliability_sweep",
     "SweepResult",
+    "CellResult",
+    "virtual_best",
+    "sweep_to_csv",
     # scalable exact tearing (S2)
     "max_acyclic_subset_milp",
     "find_cycle",

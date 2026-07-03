@@ -29,6 +29,7 @@ def test_registry_and_sweep_grid():
         "unit_selection",
         "gas_pipeline",
         "recycle_loop",
+        "cstr_dynamic",
     }
     grid = REACTION_DIFFUSION.sweep_grid(points=11)
     assert len(grid) == 11 * 11  # two swept parameters
@@ -106,3 +107,29 @@ def test_nonconvex_pipeline_roundtrip():
     res = solve(gas_pipeline(), method="d2")
     assert res.aggregation.n_eliminated >= 1
     assert res.objective == pytest.approx(original.objective, abs=1e-4)
+
+
+def test_cstr_dynamic_dae_problem():
+    """P4: the discretized-DAE control problem round-trips and aggregates well."""
+    from discopt.aggregation.api import aggregate
+    from discopt.aggregation.benchmark import _local_solve
+    from discopt.aggregation.testproblems import CSTR_DYNAMIC, cstr_dynamic
+
+    m = cstr_dynamic(n=8)
+    nv = sum(int(getattr(v, "size", 1)) for v in m._variables)
+    assert nv == 24  # c(8) + u(8) + rate(8)
+
+    # nominal solves locally to optimality (structural fingerprint)
+    status, _it, _w, obj = _local_solve(m)
+    assert status.endswith("OPTIMAL")
+
+    # d2 eliminates the algebraic rate variables — a meaningful fraction (paper's
+    # DIST shows ~36%); reduced model solves to the same optimum, fast, no blow-up
+    agg = aggregate(m, method="d2")
+    assert agg.n_eliminated / nv > 0.10
+    r_status, _i, _w, r_obj = _local_solve(agg.reduced_model)
+    assert r_status.endswith("OPTIMAL")
+    assert float(r_obj) == pytest.approx(float(obj), abs=1e-4)
+
+    # registered for the sweep harness
+    assert CSTR_DYNAMIC.build(n=6) is not None

@@ -127,6 +127,38 @@ def recycle_loop(n: int = 4, feed: float = 2.0, alpha: float = 0.2, beta: float 
     return m
 
 
+def cstr_dynamic(n: int = 8, k: float = 1.0, c_in: float = 1.0) -> Any:
+    """Time-discretized CSTR optimal control — a discretized-DAE problem.
+
+    A dynamic continuous stirred-tank reactor with product-inhibited kinetics is
+    discretized in time (backward Euler over ``n`` steps) — the structure class of
+    the paper's distillation/moving-bed *dynamic optimization* problems (DAEs with
+    rational nonlinearities).  The differential state is the concentration ``c[t]``;
+    the control is a feed rate ``u[t]``.  The reaction rate
+    ``rate[t] = k c[t] / (1 + 0.5 c[t])`` is an *algebraic* variable defined by a
+    two-variable degree-2 equation (``rate`` linear, ``c`` rational), so degree-2
+    aggregation eliminates the algebraic rates — exactly the reduced-space move of
+    keeping differential states and substituting algebraics.  The four-variable
+    dynamics ``c[t] = c[t-1] + dt(u[t] - rate[t])`` are *not* degree-2 eliminable,
+    so the states do not chain-compound (no expression blow-up).  The objective
+    tracks a setpoint with a control-effort penalty.  Sweep parameters: ``k`` and
+    the feed level ``c_in``; ``n`` is the horizon length.
+    """
+    m = dm.Model(f"cstr_dynamic_{n}")
+    c = m.continuous("c", shape=(n,), lb=0.0, ub=10.0)
+    u = m.continuous("u", shape=(n,), lb=-5.0, ub=5.0)
+    rate = m.continuous("rate", shape=(n,), lb=-50.0, ub=50.0)
+    dt = 1.0 / n
+    m.subject_to(c[0] == float(c_in))  # initial condition
+    for t in range(n):
+        m.subject_to(rate[t] - (k * c[t] / (1.0 + 0.5 * c[t])) == 0.0)  # algebraic (degree-2)
+    for t in range(1, n):
+        m.subject_to(c[t] - (c[t - 1] + dt * (u[t] - rate[t])) == 0.0)  # dynamics (4 vars)
+    target = 0.3
+    m.minimize(sum((c[t] - target) ** 2 + 0.1 * u[t] ** 2 for t in range(n)))
+    return m
+
+
 @dataclass
 class TestProblem:
     """A parameterized test problem.
@@ -193,8 +225,17 @@ RECYCLE_LOOP = TestProblem(
     default_size=4,
 )
 
+CSTR_DYNAMIC = TestProblem(
+    name="cstr_dynamic",
+    builder=cstr_dynamic,
+    nominal={"k": 1.0, "c_in": 1.0},
+    sweep={"k": (0.2, 3.0), "c_in": (0.5, 2.0)},
+    default_size=8,
+)
+
 PROBLEMS: dict[str, TestProblem] = {
-    p.name: p for p in (REACTION_DIFFUSION, UNIT_SELECTION, GAS_PIPELINE, RECYCLE_LOOP)
+    p.name: p
+    for p in (REACTION_DIFFUSION, UNIT_SELECTION, GAS_PIPELINE, RECYCLE_LOOP, CSTR_DYNAMIC)
 }
 
 
@@ -204,9 +245,11 @@ __all__ = [
     "unit_selection",
     "gas_pipeline",
     "recycle_loop",
+    "cstr_dynamic",
     "REACTION_DIFFUSION",
     "UNIT_SELECTION",
     "GAS_PIPELINE",
     "RECYCLE_LOOP",
+    "CSTR_DYNAMIC",
     "PROBLEMS",
 ]

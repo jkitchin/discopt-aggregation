@@ -722,12 +722,13 @@ def example_test_problem() -> None:
         "unit_selection": "MIQP / MINLP (binaries kept)",
         "gas_pipeline": "nonconvex NLP (Weymouth)",
         "recycle_loop": "recycle NLP (torn loop, R1)",
+        "cstr_dynamic": "discretized-DAE control (P4)",
     }
     print("  Problems span the paper's structure classes and NLP/MINLP kinds:")
     for name, problem in PROBLEMS.items():
         rows = {r["method"]: r for r in compare_methods(problem.build())}
         print(
-            f"    {name:18s} [{kinds[name]:28s}] "
+            f"    {name:18s} [{kinds.get(name, '?'):28s}] "
             f"d2 elim={rows['d2']['n_eliminated']}, gr elim={rows['gr']['n_eliminated']}"
         )
 
