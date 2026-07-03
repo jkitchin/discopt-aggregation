@@ -393,6 +393,25 @@ def example_dual_recovery() -> dict:
     )
     print(f"  maximise KKT residual: {res_mx:.2e}  (sign convention normalised)")
 
+    # DU2: an eliminated variable sitting on an active bound.  y = x**2 hits its
+    # ub=2 at the optimum; the box->inequality carries the bound multiplier, so the
+    # defining equality's multiplier (~-2.536) is recovered from that gamma-term.
+    mb = dm.Model("kktbnd")
+    mbx = mb.continuous("x", lb=-10, ub=10)
+    mby = mb.continuous("y", lb=-10, ub=2.0)  # y = x**2 pinned to ub=2 at optimum
+    mb.subject_to(mby - mbx**2 == 0.0)  # defining (eliminated)
+    mb.minimize((mbx - 5.0) ** 2)
+    agg_mb = aggregation_set(mb, method="d2")
+    rm_mb = apply_aggregation(mb, agg_mb)
+    dr_mb = recover_duals(rm_mb, rm_mb.model.solve())
+    res_mb = kkt_stationarity_residual(mb, dr_mb.full_x, dr_mb.constraint_duals, dr_mb.bound_duals)
+    print(
+        f"  active-bound model: recovered defining multiplier "
+        f"{{{', '.join(f'{k}:{v:.3f}' for k, v in sorted(dr_mb.constraint_duals.items()))}}}"
+        f"  bound gamma {{{', '.join(f'{k}:{v:.3f}' for k, v in sorted(dr_mb.bound_duals.items()))}}}"
+    )
+    print(f"  active-bound KKT residual: {res_mb:.2e}  (gamma-term recovered, DU2)")
+
     return {
         "residual": float(res),
         "available": dr.available,
@@ -400,6 +419,9 @@ def example_dual_recovery() -> dict:
         "n_duals": len(dr.constraint_duals),
         "maximise_available": dr_mx.available,
         "maximise_residual": float(res_mx),
+        "bound_available": dr_mb.available,
+        "bound_residual": float(res_mb),
+        "bound_duals": dict(dr_mb.bound_duals),
     }
 
 

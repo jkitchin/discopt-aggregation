@@ -30,15 +30,29 @@ term on the right is already known).  Gradients come from
 :func:`~discopt.aggregation.derivatives.differentiate_expression` evaluated at
 the recovered full-space point.
 
+An eliminated variable sitting on a finite bound at the optimum contributes a
+γ-term to its own stationarity row (DU2).  That γ is already observable in the
+reduced solve: the box→inequality constraint emitted for the eliminated bound
+(``constraint_origin`` entry ``("bound_lo"|"bound_hi", var)``) carries a
+multiplier, and by substitution invariance the reduced bound's dual **equals**
+the base-model bound multiplier.  discopt normalises ``v >= lb`` to body
+``lb - v`` (∂/∂v = −1) and ``v <= ub`` to body ``v - ub`` (∂/∂v = +1), so the
+term added to ``v``'s stationarity row is ``-μ_bound`` for a low bound and
+``+μ_bound`` for a high bound.  Recovery collects these into a
+``bound_duals: {var: γ}`` map, feeds each ``γ`` into the defining-multiplier
+system's row and into the KKT self-check, and reports the map on
+:class:`DualRecovery`.  A pruned bound cannot be active, so a still-active bound
+with no observable multiplier keeps ``available=False`` defensively.
+
 Two entry points: :func:`recover_duals` for a single ``apply_aggregation``
 result, and :func:`recover_duals_from_result` for a full (recursive, multi-pass)
 :class:`~discopt.aggregation.api.AggregationResult` — the latter composes each
 pass's constraint-origin map so the same back-substitution runs in the base
 model.  Scope for both: minimise **or** maximise objective (the sign is
-normalised, see below) and no *active* variable bounds on eliminated variables
-(interior solution) — validated by the full-space KKT stationarity residual.  If
-any required derivative is unsupported, recovery reports ``available=False``
-rather than a wrong result.
+normalised, see below) and eliminated-variable bounds active or interior (their
+γ-terms are recovered, see above) — all validated by the full-space KKT
+stationarity residual.  If any required derivative is unsupported, recovery
+reports ``available=False`` rather than a wrong result.
 """
 
 from __future__ import annotations
@@ -60,11 +74,18 @@ class DualRecovery:
     Attributes:
         available: False if recovery could not be performed (e.g. an unsupported
             derivative, missing reduced duals, an active eliminated-variable
-            bound, a singular defining system, or a failed KKT self-check).
-            A maximise objective is **in** scope (its sign is normalised).
+            bound whose multiplier is not observable, a singular defining system,
+            or a failed KKT self-check).  A maximise objective is **in** scope
+            (its sign is normalised) and an active eliminated-variable bound is
+            **in** scope when its box→inequality survived (its γ is recovered).
         constraint_duals: ``{original_cid: multiplier}`` for every original
             constraint — surviving ones mapped from the reduced solve, defining
             equalities recovered by solving the defining-multiplier system.
+        bound_duals: ``{eliminated_var: γ}`` — the bound multiplier recovered for
+            each eliminated variable whose box→inequality survived in the reduced
+            model (in discopt's normalised convention: it is the term added to
+            that variable's stationarity row).  Empty for a fully interior
+            solution / all bounds pruned.
         full_x: the recovered full-space primal point used.
         reason: when ``available`` is False, a short machine-readable tag for why
             (e.g. ``"active_eliminated_bound:y"``,
@@ -74,6 +95,7 @@ class DualRecovery:
 
     available: bool
     constraint_duals: dict[int, float] = field(default_factory=dict)
+    bound_duals: dict[str, float] = field(default_factory=dict)
     full_x: dict[str, Any] = field(default_factory=dict)
     reason: str = ""
 
@@ -105,14 +127,27 @@ def _objective_sign(model: Any) -> float:
     return 1.0
 
 
+def _bound_gamma_term(kind: str, mu: float) -> float:
+    """γ contribution a surviving eliminated-bound inequality adds to its row.
+
+    The reduced box→inequality's dual equals the base-model bound multiplier by
+    substitution invariance.  discopt normalises ``v >= lb`` to body ``lb - v``
+    (∂/∂v = −1) and ``v <= ub`` to body ``v - ub`` (∂/∂v = +1), so the term added
+    to the eliminated variable's stationarity row is ``-μ`` for a low bound and
+    ``+μ`` for a high bound.
+    """
+    return mu if kind == "bound_hi" else -mu
+
+
 def _active_eliminated_bound(
     model: Any, full_x: dict[str, Any], var: str, tol: float = 1e-8
 ) -> bool:
     """Whether eliminated ``var`` sits on a finite bound at the recovered point.
 
-    An active eliminated-variable bound contributes a γ-term to stationarity that
-    this recovery does not model, so an active bound puts the case out of scope
-    (the caller then reports ``available=False``).
+    An active eliminated-variable bound contributes a γ-term to stationarity.
+    When its box→inequality survived in the reduced model the γ is observable and
+    recovery proceeds (DU2); when no multiplier is observable for a still-active
+    bound the caller reports ``available=False`` defensively.
     """
     v = next((vv for vv in model._variables if vv.name == var), None)
     if v is None or var not in full_x:
@@ -133,15 +168,19 @@ def _solve_defining_duals(
     full_x: dict[str, Any],
     elim_pairs: list[tuple[str, int]],
     surviving: dict[int, float],
+    gamma: dict[str, float],
     cache: dict,
 ) -> dict[int, float] | None:
     """Solve the defining-equality multipliers as a linear system.
 
     Stationarity in each eliminated variable ``v_i`` reads
-    ``∂f/∂v_i + Σ_surviving μ_c ∂body_c/∂v_i + Σ_j μ_{cid_j} ∂body_{cid_j}/∂v_i = 0``.
-    With one defining equality per elimination this is a square system
-    ``A μ = b``, ``A[i, j] = ∂body_{cid_j}/∂v_i`` and
-    ``b[i] = -(∂f/∂v_i + Σ_surviving μ_c ∂body_c/∂v_i)``, solved directly.
+    ``∂f/∂v_i + Σ_surviving μ_c ∂body_c/∂v_i + Σ_j μ_{cid_j} ∂body_{cid_j}/∂v_i
+    + γ_{v_i} = 0``, where ``γ_{v_i}`` is the (known) recovered bound multiplier
+    of an active eliminated-variable bound (0 when interior).  With one defining
+    equality per elimination this is a square system ``A μ = b``,
+    ``A[i, j] = ∂body_{cid_j}/∂v_i`` and
+    ``b[i] = -(∂f/∂v_i + Σ_surviving μ_c ∂body_c/∂v_i + γ_{v_i})``, solved
+    directly.
 
     A single strictly-lower-triangular pass makes ``A`` triangular (the
     back-substitution special case), but across recursive passes the combined
@@ -173,7 +212,7 @@ def _solve_defining_duals(
             if g is None:
                 return None
             rhs += mu * g
-        bvec[i] = -rhs
+        bvec[i] = -(rhs + gamma.get(vi, 0.0))
         for j, cid_j in enumerate(cids):
             g = _grad(model._constraints[cid_j].body, vi, full_x, cache)
             if g is None:
@@ -191,27 +230,35 @@ def _finalize_duals(
     full_x: dict[str, Any],
     elim_pairs: list[tuple[str, int]],
     surviving: dict[int, float],
+    gamma: dict[str, float],
 ) -> DualRecovery:
-    """Shared tail: active-bound guard, linear solve, KKT self-check."""
+    """Shared tail: bound-γ handling, linear solve, KKT self-check.
+
+    ``gamma`` holds the recovered bound multipliers of eliminated variables whose
+    box→inequality survived.  An eliminated variable that is active on a bound but
+    has *no* observable γ (its bound was pruned as redundant, so it cannot truly
+    be active) is out of scope — reported defensively as ``available=False``.
+    """
     for var, _cid in elim_pairs:
-        if _active_eliminated_bound(model, full_x, var):
+        if var not in gamma and _active_eliminated_bound(model, full_x, var):
             return DualRecovery(
                 available=False, reason=f"active_eliminated_bound:{var}", full_x=full_x
             )
     cache: dict = {}
-    defining = _solve_defining_duals(model, full_x, elim_pairs, surviving, cache)
+    defining = _solve_defining_duals(model, full_x, elim_pairs, surviving, gamma, cache)
     if defining is None:
         return DualRecovery(
             available=False, reason="unsupported_derivative_or_singular", full_x=full_x
         )
     duals = {**surviving, **defining}
-    # Self-check: a successful recovery must satisfy full-space KKT stationarity.
-    # This turns any residual algebra gap into an honest available=False rather
-    # than a wrong-but-confident answer.
-    resid = kkt_stationarity_residual(model, full_x, duals)
+    # Self-check: a successful recovery must satisfy full-space KKT stationarity
+    # (including the eliminated-variable bound γ-terms).  This turns any residual
+    # algebra gap into an honest available=False rather than a wrong-but-confident
+    # answer.
+    resid = kkt_stationarity_residual(model, full_x, duals, gamma)
     if not np.isfinite(resid) or resid > 1e-6:
         return DualRecovery(available=False, reason="residual_check_failed", full_x=full_x)
-    return DualRecovery(available=True, constraint_duals=duals, full_x=full_x)
+    return DualRecovery(available=True, constraint_duals=duals, bound_duals=gamma, full_x=full_x)
 
 
 def recover_duals(reduced: Any, reduced_result: Any) -> DualRecovery:
@@ -240,30 +287,35 @@ def recover_duals(reduced: Any, reduced_result: Any) -> DualRecovery:
     # constraint order (constraint.name is usually None), and constraint_origin
     # is aligned with reduced.model._constraints, so index i -> "c{i}".
     surviving: dict[int, float] = {}
+    gamma: dict[str, float] = {}
     for i, origin in enumerate(reduced.constraint_origin):
-        if not isinstance(origin, int):
-            continue  # bound->inequality; handled by the active-bound guard
         key: Any = f"c{i}"
         if key not in rduals:  # fall back to the constraint's own name
             key = getattr(reduced.model._constraints[i], "name", None)
-        surviving[origin] = float(np.asarray(rduals.get(key, 0.0)).reshape(()))
+        mu = float(np.asarray(rduals.get(key, 0.0)).reshape(()))
+        if isinstance(origin, int):
+            surviving[origin] = mu
+        else:  # ("bound_lo"|"bound_hi", var): an eliminated-variable bound (DU2)
+            kind, var = origin
+            gamma[var] = gamma.get(var, 0.0) + _bound_gamma_term(kind, mu)
 
     elim_pairs = [(e.var, e.cid) for e in agg.eliminations]
-    return _finalize_duals(model, full_x, elim_pairs, surviving)
+    return _finalize_duals(model, full_x, elim_pairs, surviving, gamma)
 
 
-def _resolve_to_base(cid: int, level: int, origin_maps: list) -> int | None:
-    """Map a constraint index in the pass-``level`` model down to the base model.
+def _resolve_origin(cid: int, level: int, origin_maps: list) -> int | tuple:
+    """Map a pass-``level`` constraint index down to its ultimate origin.
 
     ``origin_maps[k]`` maps a pass-``k+1`` constraint index to its pass-``k``
     origin (an int) or a bound-origin tuple.  Composing maps ``level-1 .. 0``
-    descends to the base model.  Returns ``None`` if a bound-origin (a
-    box->inequality, not an original constraint) is encountered.
+    descends to the base model.  Returns the base original-constraint id (int), or
+    the ``("bound_lo"|"bound_hi", var)`` tuple if the chain terminates at a
+    box→inequality (an eliminated-variable bound, not an original constraint).
     """
     for m in range(level - 1, -1, -1):
         entry = origin_maps[m][cid]
-        if not isinstance(entry, int):
-            return None
+        if isinstance(entry, tuple):
+            return entry
         cid = entry
     return cid
 
@@ -298,42 +350,55 @@ def recover_duals_from_result(result: Any, reduced_result: Any) -> DualRecovery:
     origin_maps = result.origin_maps
     n_passes = len(origin_maps)
 
-    # Surviving constraints: final reduced index j -> base constraint id.
+    # Surviving constraints and eliminated-variable bound γ-terms (DU2): each final
+    # reduced index j resolves either to a base original-constraint id or to a
+    # ``(bound_*, var)`` box→inequality whose dual is the bound multiplier.
     surviving: dict[int, float] = {}
+    gamma: dict[str, float] = {}
     for j in range(len(result.reduced_model._constraints)):
-        base_cid = _resolve_to_base(j, n_passes, origin_maps)
-        if base_cid is None:
-            continue  # bound->inequality; handled by the active-bound guard
+        origin = _resolve_origin(j, n_passes, origin_maps)
         key: Any = f"c{j}"
         if key not in rduals:
             key = getattr(result.reduced_model._constraints[j], "name", None)
-        surviving[base_cid] = float(np.asarray(rduals.get(key, 0.0)).reshape(()))
+        mu = float(np.asarray(rduals.get(key, 0.0)).reshape(()))
+        if isinstance(origin, tuple):
+            kind, var = origin
+            gamma[var] = gamma.get(var, 0.0) + _bound_gamma_term(kind, mu)
+        else:
+            surviving[origin] = mu
 
     # Resolve every elimination's defining equality to a base-model constraint id.
     # Across recursive passes these defining bodies can be mutually coupled, so
     # the multipliers are solved as one linear system, not back-substituted.
     elim_pairs: list[tuple[str, int]] = []
     for var, local_cid, pass_index in result.elim_records:
-        base_cid = _resolve_to_base(local_cid, pass_index, origin_maps)
-        if base_cid is None:
+        base_cid = _resolve_origin(local_cid, pass_index, origin_maps)
+        if not isinstance(base_cid, int):
             return DualRecovery(available=False, reason="defining_eq_pruned")
         elim_pairs.append((var, base_cid))
 
-    return _finalize_duals(base, full_x, elim_pairs, surviving)
+    return _finalize_duals(base, full_x, elim_pairs, surviving, gamma)
 
 
 def kkt_stationarity_residual(
-    model: Any, full_x: dict[str, Any], constraint_duals: dict[int, float]
+    model: Any,
+    full_x: dict[str, Any],
+    constraint_duals: dict[int, float],
+    bound_duals: dict[str, float] | None = None,
 ) -> float:
-    """Max abs. stationarity residual ``∂f/∂w + Σ_c μ_c ∂body_c/∂w`` over variables.
+    """Max abs. stationarity residual ``∂f/∂w + Σ_c μ_c ∂body_c/∂w + γ_w`` per var.
 
-    Assumes no active variable bounds (interior solution); a small residual then
-    certifies the recovered multipliers satisfy the full-space KKT stationarity.
-    Returns ``inf`` if a required derivative is unsupported.
+    ``bound_duals`` maps an eliminated variable to the γ-term of its active bound
+    (in discopt's normalised convention: the value added directly to that
+    variable's stationarity row; DU2).  Variables absent from the map are assumed
+    to have no active bound (interior).  A small residual then certifies the
+    recovered multipliers satisfy the full-space KKT stationarity.  Returns
+    ``inf`` if a required derivative is unsupported.
     """
     obj = model._objective
     obj_expr = obj.expression if obj is not None else None
     obj_sign = _objective_sign(model)
+    bound_duals = bound_duals or {}
     cache: dict = {}
     worst = 0.0
     for v in model._variables:
@@ -354,6 +419,7 @@ def kkt_stationarity_residual(
             if g is None:
                 return float("inf")
             res += mu * g
+        res += bound_duals.get(name, 0.0)
         worst = max(worst, abs(res))
     return worst
 

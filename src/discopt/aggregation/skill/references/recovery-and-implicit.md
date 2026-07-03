@@ -20,6 +20,7 @@ res = solve(m, method="d2", recover_duals=True)
 dr = res.duals
 if dr.available:
     dr.constraint_duals      # {original_cid: multiplier}  (surviving + defining)
+    dr.bound_duals           # {eliminated_var: γ}  active-bound multipliers (DU2)
     dr.full_x                # the point used
 else:
     print(dr.reason)         # why not (see troubleshooting.md)
@@ -31,16 +32,30 @@ result: `available=True` means the full-space multipliers satisfy stationarity t
 ~1e-6, so a residual algebra gap becomes an honest `available=False`, never a
 wrong number.
 
-**Scope:** minimize **or** maximize objective, interior solution (no active bound
-on an eliminated variable). A maximize objective's multipliers are reported by
-discopt in the `minimize(-f)` convention; recovery normalises the objective-
-gradient sign so recovered duals stay directly comparable to a direct solve.
-Active-eliminated-bound γ-terms still report `available=False`.
+**Active eliminated-variable bounds (DU2).** When an eliminated variable sits on a
+finite bound at the optimum, its box→inequality (`d(kept) <= ub` / `>= lb`)
+survives in the reduced model and carries a multiplier. By substitution
+invariance that reduced dual **equals** the base-model bound multiplier γ, so
+recovery collects it into `dr.bound_duals[var]` (discopt normalises `v >= lb` to
+`lb - v` and `v <= ub` to `v - ub`, so the term added to that variable's
+stationarity row is `-μ` for a low bound, `+μ` for a high bound), feeds it into
+the defining-multiplier system, and the self-check includes it. An *interior* or
+pruned bound simply contributes γ ≈ 0.
 
-Validate independently with:
+**Scope:** minimize **or** maximize objective; active **or** interior
+eliminated-variable bounds (their γ-terms are recovered). A maximize objective's
+multipliers are reported by discopt in the `minimize(-f)` convention; recovery
+normalises the objective-gradient sign so recovered duals stay directly
+comparable to a direct solve. A still-active bound whose inequality was *pruned*
+as redundant (so its γ is unobservable — which cannot actually happen for a truly
+active bound) is reported defensively as `available=False`.
+
+Validate independently with (pass `bound_duals` so active bounds are accounted):
 ```python
 from discopt.aggregation import kkt_stationarity_residual
-kkt_stationarity_residual(res.aggregation.base_model, dr.full_x, dr.constraint_duals)  # ~0
+kkt_stationarity_residual(
+    res.aggregation.base_model, dr.full_x, dr.constraint_duals, dr.bound_duals
+)  # ~0
 ```
 
 ## Implicit elimination of cyclic blocks

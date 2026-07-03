@@ -57,18 +57,21 @@ the solver would.
 ## Dual recovery reports `available=False`
 
 `res.duals.reason` tells you why:
-- `"active_eliminated_bound:<name>"` — an eliminated variable sits on a finite
-  bound at the optimum; the γ-term isn't modeled. Recovery is unavailable, not
-  wrong.
+- `"active_eliminated_bound:<name>"` — an eliminated variable is active on a bound
+  whose box→inequality was *pruned* (so its γ is unobservable). This cannot
+  happen for a truly active bound, so it is a defensive decline, not a wrong
+  answer. A *surviving* active bound is now recovered (DU2) via
+  `res.duals.bound_duals` — see recovery-and-implicit.md.
 - `"missing_reduced_duals"` — the backend didn't expose constraint duals.
 - `"unsupported_derivative_or_singular"` / `"residual_check_failed"` — a
   derivative couldn't be formed, or the KKT self-check failed; recovery declines
   rather than return a wrong multiplier.
 Single-pass and recursive (multi-pass) paths are both supported for
-minimize **and** maximize + interior solutions. A maximize objective is reported
-by discopt in the `minimize(-f)` convention; recovery normalises the sign, so
-recovered duals stay directly comparable to a direct solve (no `"maximise"`
-bail).
+minimize **and** maximize objectives, and for active **or** interior
+eliminated-variable bounds (their γ-terms land in `res.duals.bound_duals`). A
+maximize objective is reported by discopt in the `minimize(-f)` convention;
+recovery normalises the sign, so recovered duals stay directly comparable to a
+direct solve (no `"maximise"` bail).
 
 ## Nothing gets eliminated
 

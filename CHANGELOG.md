@@ -17,6 +17,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   multiplier solve and `kkt_stationarity_residual`. Recovered duals match a direct
   solve of the maximize model to 1e-6 and pass the KKT self-check; minimize-path
   behavior is unchanged. Default-on.
+- **Dual recovery now handles active eliminated-variable bounds (DU2).** An
+  eliminated variable sitting on a finite bound at the optimum previously returned
+  `available=False, reason="active_eliminated_bound:<name>"`. The box→inequality
+  emitted for that bound survives in the reduced solve and carries a multiplier;
+  by substitution invariance it *equals* the base-model bound multiplier γ, so
+  recovery now collects it (`-μ` for a low bound, `+μ` for a high bound, matching
+  discopt's `lb - v` / `v - ub` normalisation) into a new
+  `DualRecovery.bound_duals: {var: γ}` field, feeds each γ into the defining-
+  multiplier system and the (extended) `kkt_stationarity_residual`, and reports
+  `available=True`. The active-bound repro now recovers the defining-equality
+  multiplier (≈ -2.536) with KKT residual < 1e-6. Interior/pruned bounds
+  contribute γ ≈ 0; a still-active bound with no observable multiplier stays
+  `available=False` defensively. Default-on.
 
 ## [0.3.0] - 2026-07-02
 

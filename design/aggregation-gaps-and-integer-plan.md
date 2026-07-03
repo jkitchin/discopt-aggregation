@@ -276,7 +276,37 @@ tests untouched.
 (extend `example_dual_recovery`), skill `references/recovery-and-implicit.md`
 + `references/troubleshooting.md` (remove the "maximise" reason).
 
-### DU2. Active-eliminated-bound γ-terms (M)
+### DU2. Active-eliminated-bound γ-terms (M) — ✅ DONE
+
+**Result.** Derived on paper then verified with the KKT self-check: an eliminated
+variable's box→inequality survives the reduced solve carrying multiplier `μ_j`,
+and by *substitution invariance* that reduced dual **equals** the base-model bound
+multiplier γ (proof: substituting `v = d(kept)` into the base Lagrangian's `v`-row
+and `w`-rows shows the reduced bound term `μ_j ∂d/∂w` matches the base term
+`γ ∂d/∂w`, so γ = μ_j). discopt normalises `v >= lb` → body `lb - v` (∂/∂v = −1)
+and `v <= ub` → body `v - ub` (∂/∂v = +1), so the term added to the eliminated
+variable's stationarity row is `-μ_j` (low bound) / `+μ_j` (high bound) — a single
+`_bound_gamma_term(kind, mu)` helper. Both recovery paths now collect a
+`gamma: {var: γ}` map (`recover_duals` reads `constraint_origin` tuples directly;
+`recover_duals_from_result` resolves each final constraint down through the
+composed origin maps via the renamed `_resolve_origin`, which now *returns* the
+`(bound_*, var)` tuple instead of `None`), feed `gamma[v_i]` into the defining-
+multiplier system's RHS and into the extended
+`kkt_stationarity_residual(..., bound_duals=None)`, and expose it on the new
+`DualRecovery.bound_duals` field. The old blanket `_active_eliminated_bound` bail
+is now a *defensive* one — kept only when an active bound has no observable γ (its
+inequality was pruned, which cannot truly happen for an active bound). The 0.3.0
+repro (`y = x**2`, ub=2 active) now recovers the defining multiplier ≈ -2.536 with
+KKT residual ~7e-11; the flipped test plus a single-pass variant, an interior/
+slack-vs-pruned identical-recovery test, and a 10-model active/interior property
+sweep all pass, `example_dual_recovery` gained an active-bound block, and the
+skill (`recovery-and-implicit.md`, `troubleshooting.md`) + CHANGELOG were updated.
+`transform.py` needed no change (the origin plumbing already carried
+`(bound_lo|bound_hi, var)`). Full suite 407 passed, 1 skipped. Files touched:
+`duals.py`, `examples.py`, `tests/test_aggregation_duals.py`,
+`tests/test_aggregation_duals_recursive.py`, `tests/test_aggregation_examples.py`,
+skill `references/recovery-and-implicit.md` + `references/troubleshooting.md`,
+`CHANGELOG.md`.
 
 **Problem.** An eliminated variable sitting on a finite bound at the optimum
 returns `available=False, reason="active_eliminated_bound:<name>"`. But the

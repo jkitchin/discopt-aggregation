@@ -155,16 +155,101 @@ def test_cross_pass_coupling_recovered_by_linear_solve():
     assert resid < 1e-6
 
 
-def test_active_eliminated_bound_reported_unavailable():
-    """C7-B: an active bound on an eliminated variable is out of scope, not wrong."""
+def test_active_eliminated_bound_gamma_recovered():
+    """DU2: an active bound on an eliminated variable is recovered via its γ-term.
+
+    ``y = x**2`` hits ``ub = 2`` at the optimum.  The reduced solve carries the
+    box→inequality ``x**2 <= 2`` with its own multiplier; that dual is the bound
+    γ, and the defining equality's multiplier is then recovered as ``-γ`` (hand
+    KKT / direct solve gives ≈ -2.536).  Recovery must now be available, expose
+    ``bound_duals``, and pass the full-space KKT self-check (which includes γ).
+    """
     m = dm.Model("activebnd")
     x = m.continuous("x", lb=-10, ub=10)
     y = m.continuous("y", lb=-10, ub=2.0)  # y = x^2 hits ub=2 at the optimum
     m.subject_to(y - x**2 == 0.0)
     m.minimize((x - 5.0) ** 2)
     res = solve(m, method="d2", recover_duals=True)
-    assert not res.duals.available
-    assert res.duals.reason.startswith("active_eliminated_bound")
+    assert res.duals.available, res.duals.reason
+    # y is eliminated; its defining equality is base constraint 0.
+    assert res.duals.constraint_duals[0] == pytest.approx(-2.53553389, abs=1e-4)
+    assert res.duals.bound_duals["y"] == pytest.approx(2.53553389, abs=1e-4)
+    resid = kkt_stationarity_residual(
+        res.aggregation.base_model,
+        res.duals.full_x,
+        res.duals.constraint_duals,
+        res.duals.bound_duals,
+    )
+    assert resid < 1e-6
+
+
+def test_interior_eliminated_bound_recovers_identically():
+    """DU2: an inactive-but-surviving eliminated bound recovers with γ ≈ 0.
+
+    ``y = x**2`` eliminates ``y``.  With ``ub = 1`` the box→inequality
+    ``x**2 <= 1`` survives but is slack at the optimum (``y* = 0.25``); with
+    ``ub = 9`` interval analysis prunes it entirely.  Both must recover the same
+    defining-equality multiplier and pass the KKT self-check, and the slack
+    bound's γ must be ~0 (complementary slackness).
+    """
+
+    def build(yub):
+        m = dm.Model("interiorbnd")
+        x = m.continuous("x", lb=-2, ub=2)
+        y = m.continuous("y", lb=-10, ub=yub)
+        z = m.continuous("z", lb=-5, ub=5)
+        m.subject_to(y - x**2 == 0.0)  # y in [0, 4]; ub=1 survives slack, ub=9 pruned
+        m.subject_to(x + z >= 0.5)  # surviving inequality -> reduced duals present
+        m.minimize((x - 0.5) ** 2 + (z - 1.0) ** 2)
+        return m
+
+    slack = solve(build(1.0), method="d2", recover_duals=True)
+    assert slack.duals.available, slack.duals.reason
+    resid = kkt_stationarity_residual(
+        slack.aggregation.base_model,
+        slack.duals.full_x,
+        slack.duals.constraint_duals,
+        slack.duals.bound_duals,
+    )
+    assert resid < 1e-6
+    assert all(abs(g) < 1e-6 for g in slack.duals.bound_duals.values())
+    # Same defining duals as the fully-pruned (no surviving bound) recovery.
+    pruned = solve(build(9.0), method="d2", recover_duals=True)
+    assert pruned.duals.available
+    assert pruned.duals.bound_duals == {}  # both bounds pruned by interval analysis
+    for cid, mu in pruned.duals.constraint_duals.items():
+        assert slack.duals.constraint_duals[cid] == pytest.approx(mu, abs=1e-5)
+
+
+def test_active_eliminated_bound_property():
+    """DU2 property: mixed active/inactive eliminated bounds all self-check.
+
+    A grid of ``min (x-tx)^2  s.t.  y = x**2, y in [-10, 4]``: ``y`` is eliminated
+    and its upper bound is active whenever ``tx**2 > 4`` (i.e. ``|tx| > 2``),
+    interior otherwise.  Every ``available=True`` recovery must have KKT residual
+    < 1e-6, and the sweep must exercise both an active and an interior bound.
+    """
+    n_active = n_interior = 0
+    for tx in np.linspace(-3.0, 3.0, 10):
+        m = dm.Model("prop")
+        x = m.continuous("x", lb=-10, ub=10)
+        y = m.continuous("y", lb=-10, ub=4.0)
+        m.subject_to(y - x**2 == 0.0)
+        m.minimize((x - float(tx)) ** 2)
+        res = solve(m, method="d2", recover_duals=True)
+        assert res.duals.available, res.duals.reason
+        resid = kkt_stationarity_residual(
+            res.aggregation.base_model,
+            res.duals.full_x,
+            res.duals.constraint_duals,
+            res.duals.bound_duals,
+        )
+        assert resid < 1e-6, res.duals.bound_duals
+        if any(abs(g) > 1e-6 for g in res.duals.bound_duals.values()):
+            n_active += 1
+        else:
+            n_interior += 1
+    assert n_active >= 1 and n_interior >= 1
 
 
 def test_available_recoveries_pass_self_check():

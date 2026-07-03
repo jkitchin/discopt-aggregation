@@ -119,3 +119,26 @@ def test_maximize_objective_recovers_duals():
     for cid, mu in dr.constraint_duals.items():
         want = float(np.asarray(original.constraint_duals[f"c{cid}"]).reshape(()))
         assert mu == pytest.approx(want, abs=1e-6)
+
+
+def test_active_eliminated_bound_gamma_single_pass():
+    """DU2 (single-pass): an active eliminated-variable bound recovers its γ-term.
+
+    ``y = x**2`` hits ``ub = 2`` at the optimum; the box→inequality survives, so
+    its dual is the bound γ and the defining multiplier is ``-γ`` (hand KKT gives
+    ≈ -2.536).  ``recover_duals`` (single ``apply_aggregation``) must expose
+    ``bound_duals`` and pass the KKT self-check including the γ-term.
+    """
+    m = dm.Model("activebnd1")
+    x = m.continuous("x", lb=-10, ub=10)
+    y = m.continuous("y", lb=-10, ub=2.0)
+    m.subject_to(y - x**2 == 0.0)
+    m.minimize((x - 5.0) ** 2)
+    agg = aggregation_set(m, method="d2")
+    rm = apply_aggregation(m, agg)
+    dr = recover_duals(rm, rm.model.solve())
+    assert dr.available, dr.reason
+    assert dr.bound_duals["y"] == pytest.approx(2.53553389, abs=1e-4)
+    assert dr.constraint_duals[0] == pytest.approx(-2.53553389, abs=1e-4)
+    res = kkt_stationarity_residual(m, dr.full_x, dr.constraint_duals, dr.bound_duals)
+    assert res < 1e-6, f"KKT residual {res}"

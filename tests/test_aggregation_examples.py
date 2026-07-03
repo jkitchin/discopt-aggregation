@@ -66,6 +66,9 @@ def test_symbolic_derivative_example_runs():
 def test_dual_recovery_example_runs():
     out = examples.example_dual_recovery()
     assert out["available"] and out["residual"] < 1e-6  # valid recovered KKT point
+    # DU2: the active-eliminated-bound case recovers its gamma-term and self-checks.
+    assert out["bound_available"] and out["bound_residual"] < 1e-6
+    assert out["bound_duals"]["y"] == pytest.approx(2.53553389, abs=1e-4)
 
 
 def test_recursive_duals_example_runs():
