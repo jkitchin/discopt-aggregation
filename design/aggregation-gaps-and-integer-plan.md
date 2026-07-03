@@ -587,7 +587,34 @@ names `i`; flag off: both models behave exactly as 0.3.0.
 **Files.** `transform.py` (the C1 constant check gains the integrality case),
 tests.
 
-### IA3. Integer-aware bound conversion and pruning (S–M)
+### IA3. Integer-aware bound conversion and pruning (S–M) — ✅ DONE
+
+**Result.** ``transform.apply_aggregation``'s box→inequality loop now tightens an
+eliminated *integer/binary* variable's box to the integer grid before emitting/pruning:
+``lb' = ceil(lb - 1e-9)``, ``ub' = floor(ub + 1e-9)`` (continuous variables untouched, so
+the default continuous pipeline is byte-identical). This is sound because the emitted
+inequalities constrain the defining expression ``d`` which *equals* the eliminated integer
+variable, so ``d`` inherits its integer bounds regardless of whether ``d``'s own expression
+is provably integer-valued — the real-valued interval enclosure used for pruning is left
+untouched, exactly as the design requires. The same tightening was mirrored in
+``implicit.eliminate_implicit``'s C4 bound emission for symmetry, guarded ``# pragma: no
+cover`` because integer variables are never admitted as linear candidates (``build_incidence``
+is called without ``integer_aggregation``) and so never enter a cyclic block — a test
+asserts the integer 2-cycle raises ``no eliminable`` while its continuous twin eliminates
+``{x, y}``. One correction to the plan's expectation: integer tightening makes the compared
+box strictly *smaller*, so it can only *reduce* interval-pruning, never increase it — the
+useful effect is the opposite of "more effective pruning": a bound the loose fractional box
+would prune as redundant (e.g. ``d <= 4.5`` with ``d`` ranging ``[0,4]``) now binds at the
+tightened ``d <= 4`` and is correctly *kept*, strengthening the reduced feasible region.
+**Validation.** Seven new tests in ``tests/test_aggregation_integer.py``: the core repro
+``a = b + c``, ``a ∈ [-0.5, 4.5]`` integer → constraints use ``[0, 4]`` (fails pre-fix, which
+emitted ``[-0.5, 4.5]``); continuous freeze keeping ``[-0.5, 4.5]``; tightening keeps bounds
+the continuous box prunes (``n_bound_pruned`` 2→0, values ``0``/``4``); wide integer box still
+prunes both bounds; a G2-style soundness sweep (every original-feasible integer ``(b,c)`` stays
+feasible in the reduced model, and ``a=5`` is rejected); binary tightening is identity
+(``[0,1]``); and the implicit integer-block skip. Full suite 438 passed, 1 skipped; ruff +
+format + mypy clean. Files touched: ``transform.py``, ``implicit.py``,
+``tests/test_aggregation_integer.py``.
 
 **Design.** In `apply_aggregation`'s box→inequality conversion, when the
 eliminated variable is integer: tighten first — `lb' = ceil(lb - 1e-9)`,

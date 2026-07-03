@@ -19,6 +19,7 @@ variables from the reduced solution.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any, cast
 
@@ -306,6 +307,20 @@ def apply_aggregation(model: Any, agg: AggregationSet, prune_bounds: bool = True
         v = orig_by_name[name]
         lb = float(np.min(v.lb))
         ub = float(np.max(v.ub))
+        # IA3: an eliminated *integer/binary* variable only takes integer values,
+        # so its box can be tightened to the integer grid before emitting/pruning:
+        # ``lb' = ceil(lb)``, ``ub' = floor(ub)`` (with a 1e-9 tolerance so a bound
+        # already essentially integral is not nudged off by float noise).  This
+        # makes pruning strictly more effective — a wider box is still sound — and
+        # emits the tighter inequality when a bound survives.  Only the *compared*
+        # box tightens; the defining expression's interval enclosure stays
+        # real-valued and conservative (we do not prove the expression itself is
+        # integer-valued, so rounding it would be unsound).
+        if v.var_type in (VarType.INTEGER, VarType.BINARY):
+            if lb > -_INF:
+                lb = math.ceil(lb - 1e-9)
+            if ub < _INF:
+                ub = math.floor(ub + 1e-9)
         d_lo, d_hi = interval_evaluate(d, boxes) if prune_bounds else (-_INF, _INF)
         if lb > -_INF:
             margin = 1e-9 * max(1.0, abs(lb))

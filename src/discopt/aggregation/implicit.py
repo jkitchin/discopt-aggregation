@@ -24,6 +24,7 @@ This module provides both the *primitive* and the *end-to-end elimination*:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -426,6 +427,18 @@ def eliminate_implicit(
         lb = float(np.min(v.lb))
         ub = float(np.max(v.ub))
         comp = replacement[name]
+        # IA3 (symmetry with transform.apply_aggregation): an eliminated
+        # integer/binary block variable only takes integer values, so tighten its
+        # box to the integer grid before emitting the bound inequalities.  In
+        # practice integer variables are out of scope for implicit elimination —
+        # they never enter a nonsingular cyclic block — so this branch is a
+        # defensive equivalence rather than a hot path (a test asserts integers are
+        # skipped, not eliminated).
+        if v.var_type in (VarType.INTEGER, VarType.BINARY):  # pragma: no cover - defensive
+            if lb > -_INF:
+                lb = math.ceil(lb - 1e-9)
+            if ub < _INF:
+                ub = math.floor(ub + 1e-9)
         if lb > -_INF:
             reduced.subject_to(_make_constraint(comp - lb, ">="))
             n_bound_inequalities += 1

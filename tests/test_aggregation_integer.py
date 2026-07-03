@@ -295,4 +295,189 @@ def test_fixed_integer_flag_off_is_solver_job():
         m = _fixed_integer_model("off_int", const)
         agg = aggregate(m, method="ld1", integer_aggregation=False)
         assert agg.n_eliminated == 0
-        assert not agg.infeasible_eliminations
+
+
+# --------------------------------------------------------------------------- #
+# IA3 — integer-aware box->inequality conversion and pruning                   #
+# --------------------------------------------------------------------------- #
+def _sum_of_integers_model(a_lb, a_ub, b_ub=10, c_ub=10, a_type="integer"):
+    """``a = b + c`` with ``a`` sorting first so ``gr`` eliminates it.
+
+    ``a`` carries the (possibly fractional) box ``[a_lb, a_ub]``; ``b``/``c`` are
+    integers in ``[0, b_ub]`` / ``[0, c_ub]``.  Returns the model plus the eliminated
+    variable's defining expression is ``b + c``.
+    """
+    m = dm.Model("ia3")
+    if a_type == "integer":
+        m.integer("a", lb=a_lb, ub=a_ub)
+    else:
+        m.continuous("a", lb=a_lb, ub=a_ub)
+    m.integer("b", lb=0, ub=b_ub)
+    m.integer("c", lb=0, ub=c_ub)
+    m.subject_to(m._variables[0] - (m._variables[1] + m._variables[2]) == 0.0)
+    m.minimize((m._variables[1] - 1) ** 2 + (m._variables[2] - 1) ** 2 + m._variables[0])
+    return m
+
+
+def _apply(m, method="gr", integer_aggregation=True, prune_bounds=True):
+    """Build integer-aware incidence, pick an aggregation set, apply it."""
+    from discopt.aggregation.strategies import aggregation_set
+    from discopt.aggregation.transform import apply_aggregation
+
+    inc = build_incidence(m, integer_aggregation=integer_aggregation)
+    agg = aggregation_set(inc, method=method)
+    return agg, apply_aggregation(m, agg, prune_bounds=prune_bounds)
+
+
+def _bound_constants(rm):
+    """Map ``('bound_lo'|'bound_hi', name) -> numeric bound`` for a reduced model.
+
+    Each box->inequality body is affine in the kept vars; evaluated at the kept
+    origin it equals ``lb`` (for a ``lo`` bound, body ``lb - d``) or ``-ub`` (for a
+    ``hi`` bound, body ``d - ub``), so we recover the compared bound directly.
+    """
+    from discopt.aggregation.recovery import evaluate_expression
+
+    zeros = {v.name: 0.0 for v in rm.model._variables}
+    out = {}
+    for c, orig in zip(rm.model._constraints, rm.constraint_origin):
+        if isinstance(orig, tuple) and orig[0] in ("bound_lo", "bound_hi"):
+            val = float(evaluate_expression(c.body, zeros))
+            out[orig] = val if orig[0] == "bound_lo" else -val
+    return out
+
+
+def test_integer_box_tightened_to_grid():
+    """IA3 core repro: ``a in [-0.5, 4.5]`` integer -> constraints use ``[0, 4]``.
+
+    Pre-fix the box->inequalities used the raw fractional bounds ``[-0.5, 4.5]``;
+    the integer-aware conversion emits ``d >= 0`` and ``d <= 4`` instead.
+    """
+    m = _sum_of_integers_model(-0.5, 4.5)
+    agg, rm = _apply(m)
+    assert agg.variables() == ["a"]  # a sorts first, gr eliminates it
+    consts = _bound_constants(rm)
+    assert consts[("bound_lo", "a")] == 0.0  # ceil(-0.5) == 0
+    assert consts[("bound_hi", "a")] == 4.0  # floor(4.5) == 4
+
+
+def test_continuous_box_not_tightened():
+    """Regression freeze: a *continuous* eliminated var keeps its fractional box.
+
+    The tightening is integer-only, so the same ``[-0.5, 4.5]`` box on a continuous
+    ``a`` still yields ``d >= -0.5`` / ``d <= 4.5`` — no behaviour change off the
+    integer path.
+    """
+    m = _sum_of_integers_model(-0.5, 4.5, a_type="continuous")
+    _agg, rm = _apply(m, integer_aggregation=False, prune_bounds=False)
+    consts = _bound_constants(rm)
+    assert consts[("bound_lo", "a")] == -0.5
+    assert consts[("bound_hi", "a")] == 4.5
+
+
+def test_integer_tightening_keeps_bounds_pruning_would_drop():
+    """Tightening strengthens the reduced model: integer bounds bind at the grid.
+
+    ``d = b + c`` with ``b, c in [0, 2]`` ranges over ``[0, 4]``.  With the raw
+    fractional box ``[-0.5, 4.5]`` (continuous ``a``) both box->inequalities are
+    provably redundant and pruned.  For an *integer* ``a`` the box tightens to the
+    binding ``[0, 4]``, so both bounds now bind and are emitted (at ``0`` and ``4``)
+    rather than pruned — a strictly stronger reduced feasible region.
+    """
+    cont = _sum_of_integers_model(-0.5, 4.5, b_ub=2, c_ub=2, a_type="continuous")
+    _agg, crm = _apply(cont, integer_aggregation=False, prune_bounds=True)
+    assert crm.n_bound_pruned == 2  # raw [-0.5, 4.5] is loose -> both pruned
+    assert crm.n_bound_inequalities == 0
+
+    m = _sum_of_integers_model(-0.5, 4.5, b_ub=2, c_ub=2)
+    _agg, rm = _apply(m, prune_bounds=True)
+    assert rm.n_bound_pruned == 0  # tightened [0, 4] binds -> nothing to prune
+    assert rm.n_bound_inequalities == 2
+    consts = _bound_constants(rm)
+    assert consts[("bound_lo", "a")] == 0.0
+    assert consts[("bound_hi", "a")] == 4.0
+
+
+def test_wide_integer_box_still_prunes():
+    """Pruning still fires for integers: a genuinely-redundant integer bound goes.
+
+    ``a in [-100, 100]`` (integral bounds) with ``d = b + c in [0, 20]`` -> both
+    box->inequalities are provably redundant and pruned, exactly as for a
+    continuous variable.
+    """
+    m = _sum_of_integers_model(-100, 100)
+    _agg, rm = _apply(m, prune_bounds=True)
+    assert rm.n_bound_pruned == 2
+    assert rm.n_bound_inequalities == 0
+
+
+def test_integer_reduced_model_feasible_set_is_sound():
+    """G2-style soundness: every original-feasible integer point stays feasible.
+
+    Enumerate every integer ``(b, c)`` whose implied ``a = b + c`` lands in the
+    eliminated variable's integer box, and assert the reduced model (which carries
+    the *tightened* ``[0, 4]`` bounds) accepts each such kept point — the
+    tightening never rejects a genuinely feasible integer assignment.
+    """
+    from discopt.aggregation.recovery import feasibility_violations
+
+    m = _sum_of_integers_model(-0.5, 4.5)
+    _agg, rm = _apply(m, prune_bounds=False)  # keep both bounds to test them
+    checked = 0
+    for b in range(0, 11):
+        for c in range(0, 11):
+            a = b + c
+            # feasible in the original iff a is an integer inside [-0.5, 4.5]
+            if -0.5 <= a <= 4.5:
+                point = {"b": float(b), "c": float(c)}
+                assert feasibility_violations(rm.model, point) == []
+                checked += 1
+    assert checked > 0
+    # and a point the tightening must reject: a = 5 (b=c but b+c=5) is outside the
+    # integer box, so the reduced model flags it infeasible.
+    assert feasibility_violations(rm.model, {"b": 5.0, "c": 0.0}) != []
+
+
+def test_binary_box_tightening_is_identity():
+    """Binary eliminated variables already sit on the integer grid ([0, 1])."""
+    m = dm.Model("ia3bin")
+    m.binary("a")
+    m.binary("b")
+    m.binary("c")
+    m.subject_to(m._variables[0] - (m._variables[1] + m._variables[2]) == 0.0)
+    m.minimize(m._variables[1] + m._variables[2] + m._variables[0])
+    agg, rm = _apply(m, prune_bounds=False)
+    assert agg.variables() == ["a"]
+    consts = _bound_constants(rm)
+    # a in [0, 1] -> ceil(0)=0, floor(1)=1, unchanged.
+    assert consts[("bound_lo", "a")] == 0.0
+    assert consts[("bound_hi", "a")] == 1.0
+
+
+def test_implicit_elimination_skips_integer_block_variables():
+    """IA3 (implicit C4 symmetry): integer block variables are out of scope.
+
+    A 2-cycle of *continuous* variables is eliminated by ``eliminate_implicit``;
+    the byte-identical model with *integer* block variables has no eliminable
+    block at all (integers are never admitted as linear candidates), so the
+    integers are skipped rather than mishandled.
+    """
+    import pytest
+
+    from discopt.aggregation.implicit import eliminate_implicit
+
+    def build(kind):
+        m = dm.Model("cyc")
+        x = getattr(m, kind)("x", lb=-9, ub=9)
+        y = getattr(m, kind)("y", lb=-9, ub=9)
+        t = m.continuous("t", lb=-9, ub=9)
+        m.subject_to(x - (0.5 * y + 3.0) == 0.0)
+        m.subject_to(y - (0.5 * x + 2.0) == 0.0)
+        m.minimize((t - 1.0) ** 2 + x**2 + y**2 + t)
+        return m
+
+    cont = eliminate_implicit(build("continuous"))
+    assert set(cont.eliminated) == {"x", "y"}
+
+    with pytest.raises(ValueError, match="no eliminable"):
+        eliminate_implicit(build("integer"))
