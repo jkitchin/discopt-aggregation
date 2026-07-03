@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
 from discopt.modeling.core import (
     BinaryOp,
     Constant,
@@ -199,4 +200,204 @@ def classify_linearity(expr: Any, nonlinear_names: frozenset[str] = frozenset())
     return analyze(expr)
 
 
-__all__ = ["child_exprs", "collect_variable_names", "classify_linearity"]
+def _leaf_const(node: Any) -> float | None:
+    """Scalar constant value of ``node`` if it is a *leaf* constant, else ``None``.
+
+    Mirrors discopt's ``_const_value``: only a scalar :class:`Constant` /
+    :class:`Parameter` (or a bare Python number) is a pure constant.  A composite
+    subtree that happens to evaluate to a constant (e.g. ``2 * 3``) is **not** —
+    matching ``_isolated_affine_coeff``, whose multiply/divide rules fold only a
+    literal constant operand, so ``y * (2 * 3)`` reads nonlinear both there and here.
+    """
+    if isinstance(node, bool):
+        return None
+    if isinstance(node, (int, float)):
+        return float(node)
+    if isinstance(node, (Constant, Parameter)):
+        value = getattr(node, "value", None)
+        try:
+            arr = np.asarray(value, dtype=float)
+        except (TypeError, ValueError):
+            return None
+        if arr.size == 1:
+            return float(arr.reshape(-1)[0])
+    return None
+
+
+# Internal per-node representation used by :func:`affine_coefficients`:
+# ``(const, coeffs, nonlinear)`` where ``coeffs`` maps a variable participating
+# *only* affinely to its summed coefficient, ``nonlinear`` is the set of variables
+# participating nonlinearly, and the two name sets are kept disjoint (a name that
+# ever appears nonlinearly is nonlinear).  ``None`` marks an unanalyzable node.
+
+
+def affine_coefficients(
+    expr: Any, nonlinear_names: frozenset[str] = frozenset()
+) -> tuple[float, dict[str, float | None]] | None:
+    """Affine decomposition of ``expr`` in one DAG-memoised bottom-up pass.
+
+    Returns ``(constant_term, {name: coeff_or_None})`` where the coefficient is
+    the *summed* affine coefficient when the variable participates only affinely
+    (``2*y + 3*y`` → ``5.0``, matching ``_isolated_affine_coeff``'s per-name
+    semantics), ``None`` when the variable participates nonlinearly, and where a
+    variable absent from ``expr`` simply does not appear in the map.  The whole
+    result is ``None`` only for a genuinely unanalyzable node (an unrecognised
+    kind that :func:`child_exprs` cannot walk).
+
+    This is the scalable replacement for calling discopt's ``O(tree)``
+    ``_isolated_affine_coeff`` once per candidate variable: a single
+    ``O(#distinct nodes)`` pass memoised by ``id(node)`` (the
+    :func:`classify_linearity` pattern) covers every variable at once, so a body
+    whose *tree* expansion is huge but whose shared DAG is small is analysed in
+    time proportional to the DAG.
+
+    ``nonlinear_names`` forces the listed variables nonlinear regardless of
+    syntactic form — discopt's conservative treatment of *array* variables, which
+    it never reports affine.  On fully-scalar bodies the per-``(body, var)``
+    result matches ``_isolated_affine_coeff`` exactly (coefficient to machine
+    precision when affine, ``None``-agreement otherwise).
+
+    ``constant_term`` is exact for a fully-affine body (the body as written:
+    ``3*x + 2*y - 7`` → ``(-7.0, {'x': 3.0, 'y': 2.0})``); for bodies with
+    nonlinear parts only the affine coefficients are guaranteed, and the constant
+    term reflects only the constants foldable through the affine skeleton.
+    """
+    memo: dict[int, Any] = {}
+
+    def analyze(node: Any) -> Any:
+        nid = id(node)
+        if nid in memo:
+            return memo[nid]
+        result = _analyze(node)
+        memo[nid] = result
+        return result
+
+    def all_names(rep: Any) -> set[str]:
+        # Names touched by a sub-result, for the nonlinear-collapse cases.
+        const, coeffs, nonlin = rep
+        return set(coeffs) | nonlin
+
+    def collapse_nonlinear(*reps: Any) -> Any:
+        # Every variable reachable through the given sub-results goes nonlinear.
+        if any(r is None for r in reps):
+            return None
+        names: set[str] = set()
+        for r in reps:
+            names |= all_names(r)
+        return (0.0, {}, names)
+
+    def _analyze(node: Any) -> Any:
+        if isinstance(node, Variable):
+            name = node.name
+            if name in nonlinear_names:
+                return (0.0, {}, {name})
+            return (0.0, {name: 1.0}, set())
+        if isinstance(node, (Constant, Parameter, int, float)):
+            k = _leaf_const(node)
+            return (k if k is not None else 0.0, {}, set())
+        if isinstance(node, IndexExpression):
+            # Indexed occurrence is not the scalar-affine pattern: any variable
+            # reached through it is nonlinear (matches _isolated_affine_coeff).
+            names, analyzable = collect_variable_names(node)
+            if not analyzable:
+                return None
+            return (0.0, {}, set(names))
+        if isinstance(node, UnaryOp):
+            inner = analyze(node.operand)
+            if inner is None:
+                return None
+            if node.op in _AFFINE_UNARY:
+                if node.op in ("-", "neg"):
+                    const, coeffs, nonlin = inner
+                    return (-const, {n: -c for n, c in coeffs.items()}, set(nonlin))
+                return inner
+            return collapse_nonlinear(inner)  # abs / sin / exp / ...
+        if isinstance(node, BinaryOp):
+            left = analyze(node.left)
+            right = analyze(node.right)
+            if left is None or right is None:
+                return None
+            op = node.op
+            if op in ("+", "-"):
+                return _merge_add(left, right, +1.0 if op == "+" else -1.0)
+            if op == "*":
+                return _mul(node.left, node.right, left, right)
+            if op == "/":
+                return _div(node.right, left, right)
+            # power or any other binary op over variable operands -> nonlinear
+            return collapse_nonlinear(left, right)
+        if isinstance(node, SumExpression):
+            return analyze(node.operand)
+        if isinstance(node, SumOverExpression):
+            reps = [analyze(t) for t in node.terms]
+            return collapse_nonlinear(*reps)
+        if isinstance(node, FunctionCall):
+            reps = [analyze(a) for a in node.args]
+            return collapse_nonlinear(*reps)
+        # CustomCall / MatMulExpression / unrecognised: every reachable variable
+        # nonlinear; a genuinely unwalkable node yields the outer None.
+        kids = child_exprs(node)
+        if kids is None:
+            return None
+        reps = [analyze(k) for k in kids]
+        return collapse_nonlinear(*reps)
+
+    def _merge_add(left: Any, right: Any, sign: float) -> Any:
+        lconst, lcoeffs, lnonlin = left
+        rconst, rcoeffs, rnonlin = right
+        const = lconst + sign * rconst
+        nonlin = lnonlin | rnonlin
+        coeffs: dict[str, float] = dict(lcoeffs)
+        for n, c in rcoeffs.items():
+            coeffs[n] = coeffs.get(n, 0.0) + sign * c
+        for n in nonlin:
+            coeffs.pop(n, None)
+        return (const, coeffs, nonlin)
+
+    def _scale(rep: Any, factor: float) -> Any:
+        const, coeffs, nonlin = rep
+        return (factor * const, {n: factor * c for n, c in coeffs.items()}, set(nonlin))
+
+    def _mul(lnode: Any, rnode: Any, left: Any, right: Any) -> Any:
+        left_has = bool(left[1] or left[2])
+        right_has = bool(right[1] or right[2])
+        if left_has and right_has:
+            return collapse_nonlinear(left, right)  # var on both factors
+        if left_has:
+            k = _leaf_const(rnode)
+            if k is None:
+                return collapse_nonlinear(left, right)
+            return _scale(left, k)
+        if right_has:
+            k = _leaf_const(lnode)
+            if k is None:
+                return collapse_nonlinear(left, right)
+            return _scale(right, k)
+        # Neither side carries a variable: fold the constant term.
+        return (left[0] * right[0], {}, set())
+
+    def _div(rnode: Any, left: Any, right: Any) -> Any:
+        right_has = bool(right[1] or right[2])
+        if right_has:
+            return collapse_nonlinear(left, right)  # variable in a denominator
+        k = _leaf_const(rnode)
+        if k is None or k == 0.0:
+            return collapse_nonlinear(left, right)
+        return _scale(left, 1.0 / k)
+
+    top = analyze(expr)
+    if top is None:
+        return None
+    const, coeffs, nonlin = top
+    out: dict[str, float | None] = dict(coeffs)
+    for n in nonlin:
+        out[n] = None
+    return (const, out)
+
+
+__all__ = [
+    "child_exprs",
+    "collect_variable_names",
+    "classify_linearity",
+    "affine_coefficients",
+]

@@ -42,9 +42,9 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from discopt._jax.dependent_vars import _collect_var_names, _isolated_affine_coeff
 from discopt.modeling.core import Constraint
 
+from discopt.aggregation.exprwalk import affine_coefficients, collect_variable_names
 from discopt.aggregation.incidence import IncidenceModel, build_incidence
 from discopt.aggregation.matching import (
     BipartiteGraph,
@@ -206,10 +206,11 @@ def _finalize(
 
 def _constraint_is_linear(constraint: Constraint) -> bool:
     """Whether every variable in ``constraint`` participates linearly (affine body)."""
-    names = _collect_var_names(constraint.body)
-    if names is None:  # opaque body -> not provably linear
+    extracted = affine_coefficients(constraint.body)
+    if extracted is None:  # opaque body -> not provably linear
         return False
-    return all(_isolated_affine_coeff(constraint.body, nm) is not None for nm in names)
+    # Linear iff the extractor reports no nonlinear variable (None coefficient).
+    return all(c is not None for c in extracted[1].values())
 
 
 def _defining_is_nonlinear(inc: IncidenceModel, cid: int, var: str) -> bool:
@@ -226,8 +227,8 @@ def _var_in_other_linear_constraint(inc: IncidenceModel, var: str, exclude_cid: 
     for i, c in enumerate(inc.model._constraints):
         if i == exclude_cid or not isinstance(c, Constraint):
             continue
-        names = _collect_var_names(c.body)
-        if names and var in names and _constraint_is_linear(c):
+        names, analyzable = collect_variable_names(c.body)
+        if analyzable and var in names and _constraint_is_linear(c):
             return True
     return False
 

@@ -199,3 +199,197 @@ def test_unrecognised_node_refuses():
     m._constraints.append(type(m._constraints[0])(_Weird(), "=="))
     with pytest.raises(NotImplementedError):
         build_incidence(m)
+
+
+# --------------------------------------------------------------------------- #
+# SC1: DAG-memoised affine-coefficient extractor                              #
+# --------------------------------------------------------------------------- #
+#
+# ``linear_vars`` used to call discopt's ``_isolated_affine_coeff`` once per
+# candidate variable, and that walker is O(tree): on a body whose *tree*
+# expansion is huge but whose shared DAG is small (exactly what aggressive
+# substitution produces), a single call took tens of seconds.  SC1 routes
+# ``linear_vars`` (and ``strategies._constraint_is_linear``) through the
+# DAG-memoised ``exprwalk.affine_coefficients`` — one O(#distinct nodes) pass
+# that extracts every variable's coefficient at once.
+
+
+def _shared_dag_body(m, depth):
+    """A body whose tree expansion is ``2**depth`` but whose DAG is ``O(depth)``.
+
+    ``e0 = x + 1`` then ``e_{k} = e_{k-1} + e_{k-1}`` reuses the *same* node on
+    both sides of each ``+``, so the DAG grows by one node per doubling while the
+    tree doubles.  ``x`` therefore appears ``2**depth`` times, each affinely with
+    coefficient 1, so its summed affine coefficient is exactly ``2**depth``.
+    """
+    x = m.continuous("x", lb=-10, ub=10)
+    y = m.continuous("y", lb=-10, ub=10)
+    e = x + 1.0
+    for _ in range(depth):
+        e = e + e  # shared node: tree doubles, DAG grows by one
+    return x, y, y + e - 3.0
+
+
+def test_linear_vars_scales_on_shared_dags():
+    """SC1 repro: linear_vars on a tree>>dag body is fast and correct.
+
+    Pre-SC1 (per-candidate ``_isolated_affine_coeff``) this walked the ~1M-node
+    *tree* and took ~10 s at depth 20; post-SC1 the single DAG-memoised pass
+    returns in well under a second.  We also assert the coefficients so the speed
+    win cannot come from dropping the analysis.
+    """
+    import time
+
+    from discopt.modeling.core import Constraint
+
+    depth = 20
+    m = dm.Model("shared")
+    _x, _y, body = _shared_dag_body(m, depth)
+    c = Constraint(body=body, sense="==")
+
+    t0 = time.perf_counter()
+    lv = linear_vars(c, {"x", "y"})
+    elapsed = time.perf_counter() - t0
+
+    assert elapsed < 2.0, f"linear_vars took {elapsed:.2f}s on a shared-DAG body"
+    # x occurs 2**depth times, each affine with coeff 1; y once with coeff 1.
+    assert lv["x"] == pytest.approx(float(2**depth))
+    assert lv["y"] == pytest.approx(1.0)
+
+
+def test_build_incidence_scales_on_shared_dag_equality():
+    """The full build_incidence path stays fast when an equality body is tree>>dag."""
+    import time
+
+    depth = 20
+    m = dm.Model("shared2")
+    _x, _y, body = _shared_dag_body(m, depth)
+    m.subject_to(body == 0.0)
+    m.minimize(m._variables[0] ** 2)
+
+    t0 = time.perf_counter()
+    inc = build_incidence(m)
+    elapsed = time.perf_counter() - t0
+
+    assert elapsed < 2.0, f"build_incidence took {elapsed:.2f}s on a shared-DAG body"
+    # The single equality is analysed and x reads linear (its 2**depth coefficient
+    # dominates, so it survives the relative-pivot filter; y's coefficient of 1 is
+    # correctly filtered out as ill-conditioned relative to it).
+    (cid,) = inc.constraints
+    assert inc.is_linear_edge(cid, "x")
+
+
+def test_affine_coefficients_constant_term_and_signs():
+    """Constant-term convention (needed by IA1): body as written."""
+    from discopt.aggregation.exprwalk import affine_coefficients
+
+    m = dm.Model("ct")
+    x = m.continuous("x")
+    y = m.continuous("y")
+    const, coeffs = affine_coefficients(3 * x + 2 * y - 7)
+    assert const == pytest.approx(-7.0)
+    assert coeffs["x"] == pytest.approx(3.0)
+    assert coeffs["y"] == pytest.approx(2.0)
+
+
+def test_affine_coefficients_hand_models_match_oracle():
+    """Hand bodies: affine_coefficients agrees with _isolated_affine_coeff."""
+    from discopt._jax.dependent_vars import _isolated_affine_coeff
+
+    from discopt.aggregation.exprwalk import affine_coefficients, collect_variable_names
+
+    m = dm.Model("hand")
+    x = m.continuous("x")
+    y = m.continuous("y")
+    z = m.continuous("z")
+    bodies = [
+        x + 2 * y - 3,
+        x * y - z,
+        x**2 + y,
+        x / z,
+        2 * y + 3 * y,
+        y + y**3,  # y must read nonlinear (None)
+        3 * x + 2 * y - 7,
+        x - z + 5.0,
+        (x + 1.0) * 2.0 + y,
+        x * 0.0 + y,  # x has coefficient 0 -> still affine (0.0), not None
+    ]
+    for body in bodies:
+        _, coeffs = affine_coefficients(body)
+        names, _ = collect_variable_names(body)
+        for nm in names:
+            iso = _isolated_affine_coeff(body, nm)
+            mine = coeffs.get(nm, 0.0)
+            if iso is None:
+                assert mine is None, f"{nm} in {body}: oracle None, got {mine}"
+            else:
+                assert mine is not None and mine == pytest.approx(float(iso), abs=1e-12)
+    # Spot-check the nonlinear reads explicitly.
+    assert affine_coefficients(y + y**3)[1]["y"] is None
+    assert affine_coefficients(x * y - z)[1]["x"] is None
+
+
+def test_affine_coefficients_matches_oracle_on_problem_corpus():
+    """Oracle equivalence over PROBLEMS + ld1/ecd2/ld2/d2 reduced models.
+
+    Mirrors the 0.3.0 classify_linearity validation harness: for every constraint
+    body of every registered problem and each of its structure-preserving reduced
+    models, affine_coefficients must agree with discopt's _isolated_affine_coeff
+    per (body, variable) — coefficient to 1e-12 when affine, None-agreement
+    otherwise.  Target >= 400 checks, zero mismatches.
+    """
+    from discopt._jax.dependent_vars import _isolated_affine_coeff
+    from discopt.modeling.core import Constraint
+
+    from discopt.aggregation.api import aggregate
+    from discopt.aggregation.exprwalk import affine_coefficients, collect_variable_names
+    from discopt.aggregation.testproblems import PROBLEMS
+
+    checks = 0
+    mismatches = 0
+
+    def compare(body):
+        nonlocal checks, mismatches
+        extracted = affine_coefficients(body)
+        names, _ = collect_variable_names(body)
+        for nm in names:
+            iso = _isolated_affine_coeff(body, nm)
+            mine = None if extracted is None else extracted[1].get(nm, 0.0)
+            checks += 1
+            ok = (iso is None and mine is None) or (
+                iso is not None and mine is not None and abs(float(iso) - float(mine)) < 1e-12
+            )
+            if not ok:
+                mismatches += 1
+
+    for problem in PROBLEMS.values():
+        model = problem.build()
+        for c in model._constraints:
+            if isinstance(c, Constraint):
+                compare(c.body)
+        for method in ("ld1", "ecd2", "ld2", "d2"):
+            reduced = aggregate(model, method=method).reduced_model
+            for c in reduced._constraints:
+                if isinstance(c, Constraint):
+                    compare(c.body)
+
+    assert checks >= 400, f"only {checks} checks (need >= 400)"
+    assert mismatches == 0, f"{mismatches}/{checks} oracle mismatches"
+
+
+def test_aggregate_roundtrip_correctness_after_extractor_swap():
+    """End-to-end: the extractor swap preserves elimination correctness.
+
+    A wrong coefficient would corrupt the defining substitution and break the
+    round-trip; solving the reduced model must still reproduce the original
+    objective.
+    """
+    from discopt.aggregation.api import aggregate
+    from discopt.aggregation.benchmark import _local_solve
+    from discopt.aggregation.testproblems import cstr_dynamic
+
+    model = cstr_dynamic(n=6)
+    reduced = aggregate(model, method="lm").reduced_model
+    _, _, _, obj_original = _local_solve(model)
+    _, _, _, obj_reduced = _local_solve(reduced)
+    assert obj_reduced == pytest.approx(obj_original, abs=1e-4)

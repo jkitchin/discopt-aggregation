@@ -33,10 +33,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
-from discopt._jax.dependent_vars import _isolated_affine_coeff
 from discopt.modeling.core import Constraint, VarType
 
-from discopt.aggregation.exprwalk import collect_variable_names
+from discopt.aggregation.exprwalk import affine_coefficients, collect_variable_names
 from discopt.aggregation.matching import BipartiteGraph
 
 
@@ -99,8 +98,13 @@ def linear_vars(
     """
     present = all_vars(constraint, candidate_names)
     out: dict[str, float] = {}
+    # One DAG-memoised pass extracts every variable's affine coefficient at once
+    # (O(#distinct nodes)), replacing an O(tree) walk per candidate — the walk that
+    # took minutes on substitution-expanded bodies whose shared DAG is small.
+    extracted = affine_coefficients(constraint.body)
+    coeffs: dict[str, float | None] = {} if extracted is None else extracted[1]
     for name in present:
-        coeff = _isolated_affine_coeff(constraint.body, name)
+        coeff = coeffs.get(name)
         if coeff is None or coeff == 0.0 or not np.isfinite(coeff):
             continue
         out[name] = float(coeff)

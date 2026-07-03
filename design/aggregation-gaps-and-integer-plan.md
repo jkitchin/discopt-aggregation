@@ -72,7 +72,32 @@ reuses its machinery.
 
 ## Phase 1 — Scaling
 
-### SC1. DAG-memoised affine-coefficient extractor; retire `_isolated_affine_coeff` (M)
+### SC1. DAG-memoised affine-coefficient extractor; retire `_isolated_affine_coeff` (M) — ✅ DONE
+
+**Result.** Added `exprwalk.affine_coefficients(expr, nonlinear_names=frozenset())
+-> (const, {name: coeff_or_None}) | None`: one `O(#distinct nodes)` bottom-up
+pass memoised by `id(node)` (the `classify_linearity` pattern), representing each
+node as `(const, {name: coeff}, nonlinear_set)` with the `+`/`-`/`*`/`/`/power/
+FunctionCall/CustomCall/MatMul rules from the fix design and discopt's leaf-only
+`_const_value` convention for the multiply/divide scale factor (so `y*(2*3)`
+reads nonlinear exactly as discopt does). Routed `incidence.linear_vars` (one
+pass per body, then O(1) lookups, keeping the `pivot_tol` filter) and
+`strategies._constraint_is_linear` (linear iff no nonlinear var) through it, and
+removed both `_isolated_affine_coeff` and `_collect_var_names` discopt imports
+from the plugin (only comments now name them). **Validation:** oracle equivalence
+527/0 over every `PROBLEMS` body and their `ld1/ecd2/ld2/d2` reduced models plus
+10 hand bodies (coeff to 1e-12, None-agreement); the shared-DAG regression
+(`linear_vars` on a depth-20 `e=e+e` body — a 2^20-node tree over an O(20)-node
+DAG) drops from **10.3 s pre-fix to instant**; constant-term convention
+`3x+2y-7 → (-7, {x:3, y:2})`; a `cstr_dynamic(n=6)` `lm` round-trip matches the
+direct solve to 1e-4; full suite 404 passed. **Scope note:** the extractor is
+`O(dag)`, so it only accelerates bodies with *real* DAG sharing (reaction_diffusion:
+9k-node DAG / infinite tree). `cstr_dynamic(n=50)` `lm` still does not finish — its
+`lm` substitution produces an expression whose *distinct*-node count itself grows
+exponentially (tree/dag ≈ 2, no sharing), i.e. a substitution-copy blow-up that
+is SC2's native-indexed-incidence / single-pass-substitution territory, not the
+affine-walk this item fixes. Files touched: `exprwalk.py`, `incidence.py`,
+`strategies.py`, `tests/test_aggregation_incidence.py`.
 
 **Problem.** `incidence.linear_vars` calls discopt's `_isolated_affine_coeff`
 once per candidate per constraint, and that walker is **O(tree)**. Measured: one
