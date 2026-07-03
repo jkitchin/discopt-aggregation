@@ -41,8 +41,19 @@ where = ["src"]
 include = ["discopt.aggregation*"]
 namespaces = true
 
+[project.scripts]
+# Ship the Claude skill in the wheel and install it into a .claude/skills/
+# directory (Claude Code has no auto-discovery from site-packages).
+discopt-aggregation-skill = "discopt.aggregation._skill_cli:main"
+
 [tool.setuptools.package-data]
-"discopt.aggregation" = ["README.md"]
+"discopt.aggregation" = [
+    "README.md",
+    "skill/SKILL.md",
+    "skill/README.md",
+    "skill/references/*.md",
+    "skill/examples/*.py",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

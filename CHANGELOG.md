@@ -68,7 +68,13 @@ infeasible model is a bug, not a preserved behavior). The full suite passes on
   `gr`/`lm` visit constraints and pick variables in ascending estimated-fill
   order, cutting the substituted-expression tree ~40× on `reaction_diffusion`
   (gr: 16871 → ~400 nodes) for the same eliminations. Default `"index"` (no-op).
-- Regression tests for every fix; ~45 new tests. Bibliography corrections and
+- **Claude skill**, shipped in the wheel under `discopt/aggregation/skill/`
+  (SKILL.md + references + examples), with a `discopt-aggregation-skill` console
+  script that installs it into `./.claude/skills/` or `~/.claude/skills/` (Claude
+  Code does not auto-discover skills from site-packages). The repo is also a
+  Claude Code plugin (`.claude-plugin/plugin.json` + `skills/`); single source of
+  truth is the packaged skill, with symlinks for the repo/plugin discovery paths.
+- Regression tests for every fix; ~48 new tests. Bibliography corrections and
   additions (Bongartz & Mitsos 2017, SCIP 8, the GPU condensed-KKT line).
 
 ## [0.2.0] - 2026-07-02

@@ -175,9 +175,15 @@ Details and the local-vs-global-solve caveat: `references/study-tools.md`.
 ## Installation / sanity check
 
 ```bash
-uv pip install -e .          # in the discopt-aggregation repo; requires discopt >= 0.5
+pip install discopt-aggregation          # or: uv pip install -e .  (in the repo)
 python -c "from discopt.aggregation import aggregate, solve; print('ok')"
-python -m pytest tests/ -q   # the full suite
 ```
-`discopt.aggregation` is a PEP-420 namespace subpackage that merges into the
-installed `discopt` package at import time.
+`discopt.aggregation` (requires `discopt >= 0.5`) is a PEP-420 namespace
+subpackage that merges into the installed `discopt` package at import time.
+
+This skill itself ships inside the wheel. Claude Code does not auto-discover
+skills from site-packages, so after a pip install run the bundled installer once:
+```bash
+discopt-aggregation-skill install         # -> ./.claude/skills/ (project)
+discopt-aggregation-skill install --user  # -> ~/.claude/skills/ (all projects)
+```

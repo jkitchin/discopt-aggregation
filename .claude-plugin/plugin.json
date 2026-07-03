@@ -1,0 +1,8 @@
+{
+  "name": "discopt-aggregation",
+  "version": "0.3.0",
+  "description": "Variable aggregation (reduced-space presolve) for discopt nonlinear optimization models: method choice, guards, primal/dual recovery, implicit elimination, diagnostics, and the study harnesses.",
+  "author": "John Kitchin",
+  "homepage": "https://github.com/jkitchin/discopt",
+  "keywords": ["optimization", "nonlinear", "presolve", "aggregation", "discopt"]
+}

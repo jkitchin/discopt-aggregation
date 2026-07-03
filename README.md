@@ -41,6 +41,28 @@ __path__ = __import__("pkgutil").extend_path(__path__, __name__)
 
 discopt 0.5+ includes this line. (If you use an older discopt, add it once.)
 
+## Claude skill
+
+This package ships a [Claude Code](https://code.claude.com/docs/en/skills) skill
+that documents how to use aggregation (method choice, the structure-preserving vs
+Hessian-cost tradeoff, every option, recovery, diagnostics, the study harnesses).
+Claude Code does **not** auto-discover skills from installed Python packages, so
+after `pip install` run the bundled installer once to copy it into a
+`.claude/skills/` directory Claude scans:
+
+```bash
+discopt-aggregation-skill install            # -> ./.claude/skills/  (this project)
+discopt-aggregation-skill install --user     # -> ~/.claude/skills/  (every project)
+discopt-aggregation-skill path               # where the packaged skill lives
+```
+
+Working *inside this repo*, the skill is already at `.claude/skills/` (no install
+needed). The repo is also a Claude Code **plugin** (`.claude-plugin/plugin.json`
++ `skills/`), so it can be loaded with `claude --plugin-dir <repo>` or published
+to a marketplace. The single source of truth is
+`src/discopt/aggregation/skill/`; the two `.claude/skills` / `skills` entries are
+symlinks to it.
+
 ## Methods
 
 `method=` selects the strategy, most conservative to most aggressive:
