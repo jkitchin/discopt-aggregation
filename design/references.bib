@@ -61,10 +61,14 @@
   volume  = {38},
   number  = {2},
   pages   = {332--355},
-  year    = {2022},
+  year    = {2023},  % OMS issue year (online Oct 2022)
   doi     = {10.1080/10556788.2022.2124990},
 }
 
+% Key digits are nominal (cited from the design docs); year is the true
+% first-posted year.  The published sequel is Shin, Anitescu & Pacaud, JOTA
+% (2023), DOI 10.1007/s10957-022-02129-5; the current GPU reference is
+% arXiv:2405.14236 (see below).
 @article{pacaud2024condensed,
   title   = {Condensed interior-point methods: porting reduced-space
              approaches on {GPU} hardware},
@@ -131,7 +135,7 @@
 @article{zhang2024aggregation,
   title   = {A combined variable aggregation presolving technique for mixed
              integer programming},
-  author  = {Zhang, H. and Yuan, J.},
+  author  = {Zhang, Houshan and Yuan, Jianhua},
   journal = {Operations Research Letters},
   volume  = {53},
   pages   = {107074},
@@ -139,6 +143,7 @@
   doi     = {10.1016/j.orl.2024.107074},
 }
 
+% Key digit is nominal; year is the first-posted year (v3 Mar 2024).
 @article{gleixner2024papilo,
   title   = {{PaPILO}: A parallel presolving library for integer and linear
              programming with multiprecision support},
@@ -169,4 +174,71 @@
   year    = {2024},
   doi     = {10.48550/arXiv.2409.01032},
   url     = {https://arxiv.org/abs/2409.01032},
+}
+
+% --------------------------------------------------------------------------- %
+% Additional related work (review D3): reduced-space global opt, MINLP         %
+% presolve, current GPU condensed-KKT, and the block-triangular companion.     %
+% --------------------------------------------------------------------------- %
+
+% The major uncited neighbour: eliminating variables from equation-oriented
+% models by substitution, at scale, for global optimization (MAiNGO).
+@article{bongartz2017reduced,
+  title   = {Deterministic global optimization of process flowsheets in a
+             reduced space using {McCormick} relaxations},
+  author  = {Bongartz, Dominik and Mitsos, Alexander},
+  journal = {Journal of Global Optimization},
+  volume  = {69},
+  number  = {4},
+  pages   = {761--796},
+  year    = {2017},
+  doi     = {10.1007/s10898-017-0547-4},
+}
+
+% The MINLP-presolve anchor (nonlinear canonicalization, fixed/aggregated-variable
+% substitution into expression graphs, FBBT/OBBT) -- the bib otherwise had only
+% the MIP-side presolve reference (Achterberg et al. 2020).
+@article{bestuzheva2023scip,
+  title   = {Global optimization of mixed-integer nonlinear programs with
+             {SCIP} 8},
+  author  = {Bestuzheva, Ksenia and Chmiela, Antonia and M{\"u}ller, Benjamin
+             and Serrano, Felipe and Vigerske, Stefan and Wegscheider, Fabian},
+  journal = {Journal of Global Optimization},
+  year    = {2023},
+  doi     = {10.1007/s10898-023-01345-1},
+}
+
+% Current GPU condensed / reduced-space KKT (supersede the lone 2022 preprint).
+@article{shin2023accelerating,
+  title   = {Accelerating condensed interior-point methods on {SIMD/GPU}
+             architectures},
+  author  = {Shin, Sungho and Anitescu, Mihai and Pacaud, Fran{\c c}ois},
+  journal = {Journal of Optimization Theory and Applications},
+  volume  = {202},
+  number  = {1},
+  pages   = {184--203},
+  year    = {2024},
+  doi     = {10.1007/s10957-022-02129-5},
+}
+
+@article{pacaud2025condensedgpu,
+  title   = {Condensed-space methods for nonlinear programming on {GPU}s},
+  author  = {Pacaud, Fran{\c c}ois and Shin, Sungho and Montoison, Alexis and
+             Schanen, Michel and Anitescu, Mihai},
+  journal = {arXiv preprint arXiv:2405.14236},
+  year    = {2024},
+  doi     = {10.48550/arXiv.2405.14236},
+  url     = {https://arxiv.org/abs/2405.14236},
+}
+
+% Companion to parker2026blocktriangular (should be cited alongside it).
+@article{parker2025gpunn,
+  title   = {Nonlinear optimization with {GPU}-accelerated neural network
+             constraints},
+  author  = {Parker, Robert B. and Dowson, Oscar and LoGiudice, Nicole and
+             Garcia, Manuel and Bent, Russell},
+  journal = {arXiv preprint arXiv:2509.22462},
+  year    = {2025},
+  doi     = {10.48550/arXiv.2509.22462},
+  url     = {https://arxiv.org/abs/2509.22462},
 }

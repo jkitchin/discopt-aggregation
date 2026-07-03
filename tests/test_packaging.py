@@ -33,3 +33,11 @@ def test_public_api_is_importable():
     # every name in __all__ resolves on the package
     for name in agg.__all__:
         assert hasattr(agg, name), name
+
+
+def test_public_api_has_no_duplicates_and_expected_size():
+    # __all__ has no duplicates and its size is pinned, so a drift (a new export
+    # not reflected in the docs, or an accidental removal) is a loud failure
+    # rather than a silently stale count.
+    assert len(agg.__all__) == len(set(agg.__all__))
+    assert len(agg.__all__) == 76

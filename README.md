@@ -82,7 +82,7 @@ performance/scaling demo.
 
 ```bash
 uv pip install -e ".[dev]"
-python -m pytest tests/ -q          # 200 tests
+python -m pytest tests/ -q          # the full suite
 ```
 
 ## Layout
@@ -90,10 +90,11 @@ python -m pytest tests/ -q          # 200 tests
 ```
 src/discopt/aggregation/    # the plugin (PEP 420 namespace subpackage)
   core:        matching · incidence · strategies · transform · recovery · api
+  walking:     exprwalk (single DAG-walk authority for all analyses)
   structure:   scalarize · metrics · diagnostics (Dulmage–Mendelsohn) · ordering
-  numerics:    guards · hessian_cost · duals · derivatives · implicit · tearing
+  numerics:    guards · hessian_cost · duals · derivatives · implicit · tearing · schur
   study:       testproblems · benchmark · sweep · profiling · presolve · examples
-tests/                      # test_aggregation_*.py  (300+ tests)
+tests/                      # test_aggregation_*.py
 design/                     # follow-up roadmap · parity plan · references.bib
 ```
 
