@@ -167,7 +167,48 @@ assert time.perf_counter() - t0 < 2.0
 
 **Files.** `exprwalk.py`, `incidence.py`, `strategies.py`, tests.
 
-### SC2. Build-scaling measurement post-SC1; go/no-go on native indexed incidence (S spike, L if go)
+### SC2. Build-scaling measurement post-SC1; go/no-go on native indexed incidence (S spike, L if go) — ✅ DONE (PARK)
+
+**Result (NO-GO / park).** Re-ran `profiling.build_scaling(indep_scaling_model,
+…)` post-SC1 up to 16k flat vars for `d2` and `lm` (script under scratchpad; no
+source change — the park path). Under the shipped default (`scalarize._DEFAULT_LIMIT
+= 10_000` *per array*), the largest **fully-scalarized** point is n=8000 (two arrays
+of 8000 → 16k flat vars); n≥5001-per-array arrays exceed the cap and are silently
+not scalarized (`n_eliminated=0`), so 16k flat is exactly SC2's measurable top under
+shipped behavior. Measured `aggregate` build time (seconds):
+
+| flat vars | n | scalarize_s | incidence_s | aggregate_s (d2) | ×/doubling | aggregate_s (lm) | ×/doubling |
+|---:|---:|---:|---:|---:|---:|---:|---:|
+| 2 000 | 1 000 | 0.055 | 0.025 | 0.142 | — | 0.163 | — |
+| 4 000 | 2 000 | 0.182 | 0.047 | 0.393 | 2.76 | 0.345 | 2.12 |
+| 8 000 | 4 000 | 0.890 | 0.084 | 1.410 | 3.59 | 1.295 | 3.75 |
+| 16 000 | 8 000 | 3.642 | 0.201 | 5.394 | 3.83 | 5.159 | 3.98 |
+
+At the 16k-flat-var target the build is **5.4 s** (d2) / 5.2 s (lm) — far under the
+60 s go-bar. The curve *is* superlinear (~2.5–4×/doubling, ≈ quadratic), which
+literally trips the ">2.5×/doubling" go-trigger, **but** root-cause profiling
+localizes the superlinearity to **discopt-internal** `discopt.modeling.core._check_name`:
+at n=8000 it is **2.976 s of the 3.995 s** scalarize (75%), 16 000 calls (one per
+scalar variable `scalarize_model` creates), with per-call cost doubling per doubling
+→ an **O(n²) name-uniqueness check**. The plugin's own machinery is **linear**: the
+substitution walker `scalarize._rewrite` is 0.098 s cumulative at n=8000, and SC1's
+`build_incidence` is 0.02→0.20 s (linear). This **refutes the R3 hypothesis** that
+the quadratic came from "each pass re-substitutes into the growing model" — post-SC1
+the substitution/incidence are linear; the residual quadratic is upstream, hit only
+because scalarization materializes n scalar variables.
+
+Native indexed incidence (F1 stage b) was scoped to fix a *substitution* blow-up that
+SC1 already eliminated; it would sidestep `_check_name` only as a side effect of not
+creating scalar variables. Since (a) absolute build time is ≪ 60 s through paper
+scale (16k→5.4 s; even naive quadratic extrapolation puts 32k flat ≈ 20 s, still
+under bar), (b) the plugin is already linear where F1 would act, and (c) the ground
+rules forbid vendoring around a discopt-internal cost, the L-sized rewrite is **not
+justified**. **Park** it. **Upstream item filed (recommendation):** discopt's
+`Model.continuous`/`_check_name` uses an O(n) scan per add → O(n²) bulk creation;
+a dict/set name registry makes it O(1). File against discopt; do not vendor.
+Reconsider F1 only if a future model needs >30k *scalarized* vars in one build or if
+discopt fixes `_check_name` and a plugin-side quadratic then surfaces. Files touched:
+this doc only (park path).
 
 **Problem.** 0.3.0's R3 profiling measured scalarize+aggregate scaling
 ~quadratically (0.045 → 1.272 s over 1k→8k flat vars) because each pass
