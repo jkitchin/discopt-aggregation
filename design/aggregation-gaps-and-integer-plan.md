@@ -359,7 +359,27 @@ tests, `examples.py`, skill `references/recovery-and-implicit.md`.
 
 ## Phase 3 — Reliability demonstration
 
-### RL1. Iteration-cap plumbing for local solves (S)
+### RL1. Iteration-cap plumbing for local solves (S) — ✅ DONE
+
+**Result.** Verified `max_iter` is the POUNCE/Ipopt key (empirically: it clamps
+the iteration count and returns `SolveStatus.ITERATION_LIMIT`; `maxiter`/
+`max_iterations` are rejected/ignored). Threaded `options: dict | None = None`
+through `benchmark._local_solve` and `benchmark_model` (forwarded to
+`solve_nlp_from_model(options=...)` for the original row and every method row),
+and added `reliability_sweep(..., solver_options=None)` → `_solve_instance(...,
+options=...)`. A capped run stopping at the limit reports a non-`OPTIMAL` status
+and so counts as not converged via the existing `status.endswith("OPTIMAL")`
+check — no convergence-logic change needed. Default (`None`) is byte-identical to
+the uncapped call. **Validation:** 5 new regression tests (all fail pre-fix with
+`TypeError` on the new kwargs / on the uncapped model reaching OPTIMAL): with
+`{"max_iter": 3}`, `reaction_diffusion(n=6)` reports `ITERATION_LIMIT`/iters=3
+where the uncapped run converges in 6; `benchmark_model` propagates the cap to
+every row; `options=None`/`solver_options=None` reproduce the uncapped
+status/iters/objective; a capped sweep converges strictly fewer instances (0/9)
+than the uncapped (9/9). Full suite 412 passed, 1 skipped. Files touched:
+`benchmark.py`, `sweep.py`, `tests/test_aggregation_benchmark.py`,
+`tests/test_aggregation_sweep.py`, `skill/references/study-tools.md`,
+`CHANGELOG.md`.
 
 **Problem.** The paper's reliability protocol counts convergence **within an
 iteration limit** (3000 there). `_local_solve` and `reliability_sweep` expose no

@@ -53,3 +53,33 @@ def test_per_cell_retention_and_virtual_best():
     vb = virtual_best(res)
     assert vb.n_instances == 9
     assert vb.n_converged >= max(r.n_converged for r in res.values())
+
+
+@pytest.mark.unit
+def test_reliability_sweep_respects_iteration_cap():
+    """RL1: ``solver_options={"max_iter": N}`` lets a sweep count convergence
+    within an iteration limit — the paper's reliability protocol.
+
+    Uncapped, every instance converges; a tight ``max_iter=3`` cap makes the
+    full-space (``original``) instances stop at the limit and count as not
+    converged, so the capped converged count is strictly below the uncapped one.
+    """
+    uncapped = reliability_sweep(REACTION_DIFFUSION, methods=("ld1", "d2"), points=3)
+    capped = reliability_sweep(
+        REACTION_DIFFUSION, methods=("ld1", "d2"), points=3, solver_options={"max_iter": 3}
+    )
+    assert set(capped) == {"original", "ld1", "d2"}
+    assert uncapped["original"].n_converged == 9
+    # The cap turns converged instances into not-converged ones.
+    assert capped["original"].n_converged < uncapped["original"].n_converged
+
+
+@pytest.mark.unit
+def test_reliability_sweep_default_options_unchanged():
+    """RL1: ``solver_options=None`` (default) leaves the sweep uncapped."""
+    explicit_none = reliability_sweep(
+        REACTION_DIFFUSION, methods=("d2",), points=3, solver_options=None
+    )
+    default = reliability_sweep(REACTION_DIFFUSION, methods=("d2",), points=3)
+    for method in ("original", "d2"):
+        assert explicit_none[method].n_converged == default[method].n_converged == 9

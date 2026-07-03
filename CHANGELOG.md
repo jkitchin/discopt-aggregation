@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Iteration-cap plumbing for local solves (RL1).** The study harness can now
+  count convergence *within an iteration limit* — the paper's reliability
+  protocol (3000 iterations). A new `options: dict | None = None` argument threads
+  through `benchmark._local_solve` and `benchmark_model`, and
+  `reliability_sweep(..., solver_options=None)` forwards it to every local solve
+  (`solve_nlp_from_model(options=...)`, e.g. `{"max_iter": 3000}`). A run that
+  stops at the cap reports a non-`OPTIMAL` status (`ITERATION_LIMIT`) and so
+  counts as **not converged**. Default (`options=None`/`solver_options=None`)
+  leaves solves uncapped and behavior unchanged.
+
 ### Fixed
 
 - **Dual recovery now supports maximize objectives (DU1).** `recover_duals` /

@@ -28,6 +28,7 @@ rows = benchmark_model(model)                 # local solves; per-method Benchma
 # BenchmarkRow: method, n_eliminated, n_variables, nnz_hessian, status,
 #               iterations, solve_wall_time, aggregate_time, objective
 benchmark_model(model, run_solve=False)       # cheap: structural only (for gr/lm)
+benchmark_model(model, options={"max_iter": 3000})  # cap iterations (paper protocol)
 
 b = callback_breakdown(model, method="gr")    # per-callback cost fractions
 # {"func","grad","jac","hess","hess_over_func"} — the paper's func/jac/hess split
@@ -43,7 +44,11 @@ Hessian-cost *trend* is robust at DAE scale, noisy at tiny sizes.
 from discopt.aggregation import (reliability_sweep, virtual_best, sweep_to_csv,
                                   PROBLEMS)
 
-res = reliability_sweep(PROBLEMS["gas_pipeline"], methods=("ld1","d2"), points=11)
+res = reliability_sweep(PROBLEMS["gas_pipeline"], methods=("ld1","d2"), points=11,
+                        solver_options={"max_iter": 3000})  # paper's iteration cap
+# solver_options forwards to every local solve; with {"max_iter": N} an instance
+# that stops at the cap counts as *not converged* (paper's reliability protocol).
+# solver_options=None (default) leaves solves uncapped.
 # {method: SweepResult}; SweepResult has n_converged, pct_converged,
 #   avg_iterations, avg_wall_time, and .cells (per-grid-point CellResult) for the
 #   Figs 9–11 convergence grids.

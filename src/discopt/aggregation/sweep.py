@@ -53,20 +53,30 @@ class SweepResult:
     cells: list[CellResult] = field(default_factory=list)
 
 
-def _solve_instance(model: Any, method: str) -> tuple[bool, int, float]:
-    """Solve one instance locally; returns (converged, iterations, wall_time)."""
+def _solve_instance(
+    model: Any, method: str, options: dict[str, Any] | None = None
+) -> tuple[bool, int, float]:
+    """Solve one instance locally; returns (converged, iterations, wall_time).
+
+    ``options`` is forwarded to the local solve (see :func:`_local_solve`); with
+    ``{"max_iter": N}`` a run that hits the cap reports a non-``OPTIMAL`` status
+    and so counts as not converged.
+    """
     if method == "original":
         target = model
     else:
         target = aggregate(model, method=method).reduced_model
         if not target._variables:  # fully determined by aggregation: trivially solved
             return True, 0, 0.0
-    status, iters, wall, _obj = _local_solve(target)
+    status, iters, wall, _obj = _local_solve(target, options=options)
     return status.endswith("OPTIMAL"), iters, wall
 
 
 def reliability_sweep(
-    problem: Any, methods: tuple[str, ...] = ("ld1", "d2"), points: int = 3
+    problem: Any,
+    methods: tuple[str, ...] = ("ld1", "d2"),
+    points: int = 3,
+    solver_options: dict[str, Any] | None = None,
 ) -> dict[str, SweepResult]:
     """Sweep ``problem`` over its parameter grid, per method (plus ``original``).
 
@@ -76,6 +86,11 @@ def reliability_sweep(
             ones by default — gr/lm reduced models can be very slow to solve).
         points: grid points per swept parameter (``points**2`` instances for a
             two-parameter problem).
+        solver_options: POUNCE/Ipopt option dict forwarded to every local solve.
+            Pass ``{"max_iter": 3000}`` to count convergence within an iteration
+            cap, as in the paper's reliability protocol — an instance that hits
+            the cap counts as not converged.  ``None`` (the default) leaves solves
+            uncapped.
 
     Returns a ``{method: SweepResult}`` map, keyed also by ``"original"``.
     """
@@ -85,7 +100,7 @@ def reliability_sweep(
         cells: list[CellResult] = []
         for params in grid:
             model = problem.build(**params)
-            ok, it, wt = _solve_instance(model, method)
+            ok, it, wt = _solve_instance(model, method, options=solver_options)
             cells.append(CellResult(params=dict(params), converged=ok, iterations=it, wall_time=wt))
         results[method] = _summarize(method, cells)
     return results

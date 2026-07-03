@@ -45,11 +45,21 @@ class BenchmarkRow:
     objective: float
 
 
-def _local_solve(model: Any) -> tuple[str, int, float, float]:
-    """Local NLP solve; returns (status, iterations, wall_time, objective)."""
+def _local_solve(
+    model: Any, options: dict[str, Any] | None = None
+) -> tuple[str, int, float, float]:
+    """Local NLP solve; returns (status, iterations, wall_time, objective).
+
+    ``options`` is forwarded to
+    :func:`discopt.solvers.nlp_pounce.solve_nlp_from_model` (POUNCE/Ipopt option
+    dict).  Use ``{"max_iter": N}`` to cap iterations: a run that stops at the
+    limit reports a non-``OPTIMAL`` status (``ITERATION_LIMIT``) and so counts as
+    *not converged* — the paper's reliability protocol.  ``options=None`` (the
+    default) leaves the solve byte-identical to an uncapped call.
+    """
     from discopt.solvers.nlp_pounce import solve_nlp_from_model
 
-    r = solve_nlp_from_model(model)
+    r = solve_nlp_from_model(model, options=options)
     return (
         str(getattr(r, "status", "")),
         int(getattr(r, "iterations", -1)),
@@ -59,7 +69,10 @@ def _local_solve(model: Any) -> tuple[str, int, float, float]:
 
 
 def benchmark_model(
-    model: Any, methods: tuple[str, ...] = _DEFAULT_METHODS, run_solve: bool = True
+    model: Any,
+    methods: tuple[str, ...] = _DEFAULT_METHODS,
+    run_solve: bool = True,
+    options: dict[str, Any] | None = None,
 ) -> list[BenchmarkRow]:
     """Benchmark ``model`` and each aggregation method.
 
@@ -69,6 +82,10 @@ def benchmark_model(
     structural columns are filled (``iterations=-1``), which is the cheap way to
     characterise methods whose reduced model is expensive to solve (``gr``/``lm``
     on densifying problems).
+
+    ``options`` is forwarded to every local solve (see :func:`_local_solve`);
+    e.g. ``{"max_iter": 3000}`` caps iterations as in the paper's reliability
+    protocol.  ``options=None`` (the default) leaves solves uncapped.
     """
     rows: list[BenchmarkRow] = []
     # Measure the original in its scalarized form so its structural columns are
@@ -77,7 +94,9 @@ def benchmark_model(
     scalar_model, smap = scalarize_model(model)
     base_model = scalar_model if smap.scalarized else model
     base = model_structure(base_model)
-    st, it, wt, obj = _local_solve(base_model) if run_solve else ("", -1, 0.0, float("nan"))
+    st, it, wt, obj = (
+        _local_solve(base_model, options=options) if run_solve else ("", -1, 0.0, float("nan"))
+    )
     rows.append(
         BenchmarkRow("original", 0, base.n_variables, base.nnz_hessian, st, it, wt, 0.0, obj)
     )
@@ -87,7 +106,9 @@ def benchmark_model(
         t_elim = perf_counter() - t0
         struct = model_structure(result.reduced_model)
         st, it, wt, obj = (
-            _local_solve(result.reduced_model) if run_solve else ("", -1, 0.0, float("nan"))
+            _local_solve(result.reduced_model, options=options)
+            if run_solve
+            else ("", -1, 0.0, float("nan"))
         )
         rows.append(
             BenchmarkRow(
