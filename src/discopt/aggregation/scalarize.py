@@ -185,9 +185,7 @@ def _rewrite(expr: Any, index_map: dict, var_map: dict[str, Expression]) -> Any:
         # Unrecognised node: _find_abstentions already abstained every candidate
         # array under it, so there is nothing to rewrite — but refuse rather than
         # silently pass through a node that could hide a kept variable.
-        raise NotImplementedError(
-            f"scalarize cannot rewrite node of type {type(expr).__name__!r}"
-        )
+        raise NotImplementedError(f"scalarize cannot rewrite node of type {type(expr).__name__!r}")
     return expr
 
 

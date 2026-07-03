@@ -46,12 +46,21 @@ _FUNC_DERIV = {
 }
 
 
+def _scalar_const(e: Any) -> float | None:
+    """Scalar value of a size-1 constant, else ``None`` (array constants included)."""
+    if isinstance(e, Constant):
+        arr = np.asarray(e.value)
+        if arr.size == 1:
+            return float(arr.reshape(()))
+    return None
+
+
 def _is_zero(e: Any) -> bool:
-    return isinstance(e, Constant) and float(np.asarray(e.value).reshape(())) == 0.0
+    return _scalar_const(e) == 0.0
 
 
 def _is_one(e: Any) -> bool:
-    return isinstance(e, Constant) and float(np.asarray(e.value).reshape(())) == 1.0
+    return _scalar_const(e) == 1.0
 
 
 def _neg(a: Expression) -> Expression:
@@ -93,9 +102,7 @@ def _div(a: Expression, b: Expression) -> Expression:
 
 
 def _const_value(e: Any) -> float | None:
-    if isinstance(e, Constant):
-        return float(np.asarray(e.value).reshape(()))
-    return None
+    return _scalar_const(e)  # None for non-constants and array-valued constants
 
 
 def differentiate_expression(expr: Any, var: str) -> Expression | None:

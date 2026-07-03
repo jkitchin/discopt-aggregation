@@ -315,9 +315,7 @@ def block_triangularize(matching: dict, adj_left: dict) -> list[list[tuple]]:
             if a2 in matched_set and a2 != a:
                 succ[a2].add(a)  # a2 -> a : a depends on a2
 
-    sccs = strongly_connected_components(
-        matched_vars, lambda n: sorted(succ[n], key=_sort_key)
-    )
+    sccs = strongly_connected_components(matched_vars, lambda n: sorted(succ[n], key=_sort_key))
 
     # Condensation: map each var to its component id, build a DAG over components.
     comp_id: dict = {}

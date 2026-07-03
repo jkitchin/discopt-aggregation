@@ -105,14 +105,23 @@ def block_triangular_ordering(
         A :class:`BlockTriangularOrdering`.  Its ``permutation`` is the 0-based
         array to hand to feral#107 / pounce#180 once those land.
     """
+    if method not in ("lm", "gr"):
+        raise ValueError(f"method must be 'lm' or 'gr', got {method!r}")
     inc = build_incidence(model, pivot_tol=pivot_tol)
 
-    # Raw maximum matching on the linear incidence (pre-drop, so cyclic blocks
-    # survive as diagonal blocks of the block-lower-triangular form).
+    # The matching whose block-triangular structure is emitted.  "lm" uses the
+    # maximum matching on the linear incidence (pre-drop, so cyclic blocks survive
+    # as diagonal blocks); "gr" uses the greedy matching (Algorithm 1), which is
+    # already lower-triangular by construction.
     cids = sorted(inc.constraints)
-    linear_edges = [(cid, v) for cid in cids for v in inc.constraint_linear_vars(cid)]
-    linear_graph = BipartiteGraph.from_edges(linear_edges)
-    matching = maximum_matching(linear_graph)
+    if method == "gr":
+        from discopt.aggregation.strategies import _greedy
+
+        matching = _greedy(inc, cids)
+    else:
+        linear_edges = [(cid, v) for cid in cids for v in inc.constraint_linear_vars(cid)]
+        linear_graph = BipartiteGraph.from_edges(linear_edges)
+        matching = maximum_matching(linear_graph)
 
     blocks = block_triangularize(matching, inc.graph.adj_left)
     block_names = [[var for _cid, var in block] for block in blocks]

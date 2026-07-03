@@ -323,6 +323,7 @@ def test_exact_tear_falls_back_to_greedy_on_nonoptimal_milp(monkeypatch):
         x: dict = {}
 
     import discopt.aggregation.strategies as strat
+
     monkeypatch.setattr(strat, "_EXACT_TEAR_CAP", 0)  # force the MILP path
     monkeypatch.setattr(dm.Model, "solve", lambda self, **k: _Bad())
     # a cyclic model so exact tearing engages

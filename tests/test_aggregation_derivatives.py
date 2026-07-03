@@ -90,3 +90,13 @@ def test_constant_derivative():
     d = differentiate_expression(Constant(7.0), "x")
     assert d is not None
     assert float(evaluate_expression(d, {"x": 1.0})) == 0.0
+
+
+def test_array_valued_exponent_returns_none():
+    """N6: an array-valued constant exponent is unhandled -> None, not a crash."""
+    from discopt.modeling.core import Constant
+
+    m = dm.Model("n6")
+    x = m.continuous("x")
+    assert differentiate_expression(x ** Constant([2, 3]), "x") is None
+    assert differentiate_expression(x**2, "x") is not None  # scalar still works

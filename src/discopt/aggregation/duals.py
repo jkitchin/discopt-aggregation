@@ -82,10 +82,12 @@ def _grad(expr: Any, var: str, values: dict[str, Any], cache: dict) -> float | N
     return float(np.asarray(evaluate_expression(d, values)).reshape(()))
 
 
-_INF_BOUND = 1e19  # discopt unbounded sentinel
+_INF_BOUND = 9.9e19  # below discopt's +-9.999e19 sentinel
 
 
-def _active_eliminated_bound(model: Any, full_x: dict[str, Any], var: str, tol: float = 1e-8) -> bool:
+def _active_eliminated_bound(
+    model: Any, full_x: dict[str, Any], var: str, tol: float = 1e-8
+) -> bool:
     """Whether eliminated ``var`` sits on a finite bound at the recovered point.
 
     An active eliminated-variable bound contributes a γ-term to stationarity that

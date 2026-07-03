@@ -140,8 +140,14 @@ def _greedy(
     return matching
 
 
-def _finalize(matching: dict[int, str], inc: IncidenceModel, method: str) -> AggregationSet:
+def _finalize(
+    matching: dict[int, str], inc: IncidenceModel, method: str, n_dropped_prior: int = 0
+) -> AggregationSet:
     """Order a matching topologically and drop any residual cyclic block.
+
+    ``n_dropped_prior`` carries drops already made by an earlier filter (e.g.
+    :func:`drop_linearity_breaking`) so the reported ``n_dropped`` accumulates
+    across passes instead of resetting.
 
     Runs :func:`block_triangularize` over the *full* incidence (linear and
     nonlinear edges), so a nonlinear occurrence of one eliminated variable in
@@ -157,7 +163,7 @@ def _finalize(matching: dict[int, str], inc: IncidenceModel, method: str) -> Agg
     """
     blocks = block_triangularize(matching, inc.graph.adj_left)
     eliminations: list[Elimination] = []
-    n_dropped = 0
+    n_dropped = n_dropped_prior
     for block in blocks:
         if len(block) == 1:
             cid, var = block[0]
@@ -224,7 +230,8 @@ def drop_linearity_breaking(agg: AggregationSet) -> AggregationSet:
         kept[e.cid] = e.var
     if len(kept) == agg.n:
         return agg  # nothing dropped
-    return _finalize(kept, inc, agg.method)
+    n_removed = agg.n - len(kept)
+    return _finalize(kept, inc, agg.method, n_dropped_prior=agg.n_dropped + n_removed)
 
 
 def _induced_acyclic(subset: set[str], deps: dict[str, set[str]]) -> bool:

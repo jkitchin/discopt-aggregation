@@ -134,3 +134,30 @@ def test_conditioning_accounts_for_large_coefficients():
     capped = aggregate(m, method="gr", max_condition=1e3)
     uncapped = aggregate(m, method="gr")
     assert capped.n_eliminated < uncapped.n_eliminated  # the 1e6 elimination dropped
+
+
+def test_drop_counts_accumulate_across_filters():
+    """N8: a linearity-breaking drop is added to n_dropped, not reset by _finalize."""
+    import discopt.modeling as dm
+
+    from discopt.aggregation.incidence import build_incidence
+    from discopt.aggregation.strategies import (
+        drop_linearity_breaking,
+        greedy_aggregation_set,
+    )
+
+    m = dm.Model("n8")
+    x = m.continuous("x", lb=-9, ub=9)
+    y = m.continuous("y", lb=-9, ub=9)
+    w = m.continuous("w", lb=-9, ub=9)
+    m.subject_to(y - x**2 == 0.0)  # nonlinear def of y
+    m.subject_to(w - y == 0.0)  # linear target containing y -> dropping y here
+    m.minimize(x**2 + y + w)
+    inc = build_incidence(m)
+    base = greedy_aggregation_set(inc)
+    filtered = drop_linearity_breaking(base)
+    # the linearity-breaking elimination of y was dropped, and n_dropped reflects
+    # it (accumulated onto base.n_dropped) rather than resetting to _finalize's own
+    assert filtered.n == base.n - 1
+    assert filtered.n_dropped == base.n_dropped + 1
+    assert "y" not in {e.var for e in filtered.eliminations}

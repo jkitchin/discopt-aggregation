@@ -41,7 +41,7 @@ from discopt.aggregation.recovery import interval_evaluate
 from discopt.aggregation.strategies import AggregationSet
 from discopt.aggregation.transform import substitute_expression
 
-_INF_BOUND = 1e19
+_INF_BOUND = 9.9e19  # below discopt's +-9.999e19 sentinel
 
 
 def _var_names(expr: Any) -> set[str]:
@@ -103,7 +103,9 @@ class _Walk:
     resolved: dict[str, Any]  # kept var -> resolved (inlined) defining expr
 
 
-def _step(walk: _Walk, inc: Any, e: Any, boxes: dict[str, tuple[float, float]]) -> tuple[Any, float]:
+def _step(
+    walk: _Walk, inc: Any, e: Any, boxes: dict[str, tuple[float, float]]
+) -> tuple[Any, float]:
     """Resolved expression and amplification for elimination ``e`` given kept state."""
     raw = _raw_define(inc, e.cid, e.var, e.coeff)
     resolved = substitute_expression(raw, walk.resolved)  # inline kept elims only

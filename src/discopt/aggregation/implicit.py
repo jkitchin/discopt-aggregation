@@ -32,7 +32,7 @@ import numpy as np
 from discopt.aggregation.derivatives import differentiate_expression
 from discopt.aggregation.recovery import evaluate_expression
 
-_INF = 1e19  # discopt uses +-9.999e19 as the unbounded sentinel
+_INF = 9.9e19  # below discopt's +-9.999e19 sentinel; real bounds < 9.9e19 are kept
 
 _SINGULAR_TOL = 1e-12
 
