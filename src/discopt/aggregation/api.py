@@ -277,6 +277,8 @@ def solve(
     prune_bounds: bool = True,
     scalarize: bool = True,
     preserve_target_linearity: bool = False,
+    tearing: str = "greedy",
+    decomposable: bool = False,
     max_def_nodes: int | None = None,
     max_condition: float | None = None,
     recover_duals: bool = False,
@@ -284,9 +286,10 @@ def solve(
 ) -> AggregatedSolveResult:
     """Aggregate ``model``, solve the reduced model, and recover the full solution.
 
-    ``pivot_tol``, ``max_fill``, ``prune_bounds``, ``scalarize`` and
-    ``preserve_target_linearity`` are forwarded to :func:`aggregate`; extra
-    keyword arguments are forwarded to the reduced model's ``solve``.
+    ``pivot_tol``, ``max_fill``, ``prune_bounds``, ``scalarize``,
+    ``preserve_target_linearity``, ``tearing``, ``decomposable``,
+    ``max_def_nodes`` and ``max_condition`` are forwarded to :func:`aggregate`;
+    extra keyword arguments are forwarded to the reduced model's ``solve``.
 
     When ``recover_duals`` is True, the result's ``duals`` field carries a
     :class:`~discopt.aggregation.duals.DualRecovery` of the full-space Lagrange
@@ -303,6 +306,8 @@ def solve(
         prune_bounds=prune_bounds,
         scalarize=scalarize,
         preserve_target_linearity=preserve_target_linearity,
+        tearing=tearing,
+        decomposable=decomposable,
         max_def_nodes=max_def_nodes,
         max_condition=max_condition,
     )

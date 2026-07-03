@@ -218,3 +218,61 @@ def test_fully_determined_chained_bound_violation():
     m.minimize(a + b)
     res = solve(m, method="ld1")
     assert res.status == "infeasible"
+
+
+def test_solve_forwards_tearing_and_decomposable():
+    """T1: solve() accepts tearing=/decomposable= and forwards them to aggregate()."""
+    import inspect
+
+    from discopt.aggregation.api import aggregate as _agg
+    from discopt.aggregation.api import solve as _solve
+
+    agg_params = set(inspect.signature(_agg).parameters)
+    solve_params = set(inspect.signature(_solve).parameters)
+    # every aggregate() knob (except the model itself) must be reachable from solve()
+    missing = (agg_params - {"model"}) - solve_params
+    assert not missing, f"solve() is missing aggregate() parameters: {missing}"
+
+    # and it actually works on a cyclic model with exact tearing
+    m = dm.Model("t1")
+    x = m.continuous("x", lb=-9, ub=9)
+    y = m.continuous("y", lb=-9, ub=9)
+    t = m.continuous("t", lb=-9, ub=9)
+    m.subject_to(x - (0.5 * y + 3.0) == 0.0)
+    m.subject_to(y - (0.5 * x + 2.0) == 0.0)
+    m.subject_to(t - (x + 1.0) == 0.0)
+    m.minimize((t - 1.0) ** 2 + x**2 + y**2)
+    res = solve(m, method="lm", tearing="exact")
+    assert res.status in ("optimal", "infeasible") or "OPTIMAL" in str(res.status)
+
+
+def test_maximize_objective_round_trips():
+    """T4: aggregate+solve of a maximize model recovers the correct optimum.
+
+    Covers the maximize rebuild path in transform.apply_aggregation (no sign
+    error should slip through, since no test previously solved a maximize model).
+    """
+    m = dm.Model("maxo")
+    x = m.continuous("x", lb=-5, ub=5)
+    y = m.continuous("y", lb=-20, ub=20)
+    m.subject_to(y - (2 * x + 1) == 0.0)
+    m.maximize(-(x**2) - y**2 + x)  # concave; unique interior max
+    res = solve(m, method="d2")
+    assert "OPTIMAL" in str(res.status).upper() or res.status == "optimal"
+    # cross-check against solving the original directly
+    direct = m.solve()
+    assert float(res.objective) == pytest.approx(float(direct.objective), abs=1e-4)
+    xf = _as_floats(res.x)
+    assert xf["y"] == pytest.approx(2 * xf["x"] + 1, abs=1e-5)  # defining eq holds
+
+
+def test_maximize_objective_scalarized_array_round_trips():
+    """T4: maximize + array scalarization rebuild path."""
+    m = dm.Model("maxarr")
+    c = m.continuous("c", shape=(3,), lb=-5, ub=5)
+    s = m.continuous("s", lb=-30, ub=30)
+    m.subject_to(s - (c[0] + c[1] + c[2]) == 0.0)
+    m.maximize(-(s**2) - sum(c[i] ** 2 for i in range(3)) + c[0])
+    res = solve(m, method="d2")
+    direct = m.solve()
+    assert float(res.objective) == pytest.approx(float(direct.objective), abs=1e-3)

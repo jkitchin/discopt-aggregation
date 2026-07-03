@@ -87,6 +87,36 @@ def test_surviving_array_shifts_flat_indices():
     assert all(i >= n_x + 1 for i in idx if i >= n_x)  # eq-dual past n_x + n_ineq
 
 
+def test_equality_only_hand_checked_offsets():
+    """T8: an all-equality model with hand-checked KKT indices.
+
+    Two eliminable variables, no inequalities (``n_ineq = 0``), so the eq-dual
+    block starts at ``n_x = 3``.  A wrong offset in ``kkt_schur_indices`` would
+    fail this exact-index assertion rather than pass silently (the e2e objective
+    check cannot catch a wrong-but-in-range block because pounce falls back).
+    """
+    m = dm.Model("eqonly")
+    a = m.continuous("a", lb=-9, ub=9)
+    b = m.continuous("b", lb=-9, ub=9)
+    c = m.continuous("c", lb=-9, ub=9)
+    m.subject_to(b - (a + 1) == 0.0)  # cid 0, eq_rank 0
+    m.subject_to(c - (2 * b) == 0.0)  # cid 1, eq_rank 1
+    m.minimize(a**2 + b**2 + c**2)
+    # the deterministic matching (C6) eliminates a (via cid 0) and b (via cid 1):
+    # x-block a->0, b->1; n_x = 3, n_ineq = 0, so eq-dual base = 3; cids 0,1 -> 3,4.
+    assert kkt_schur_indices(m) == [0, 1, 3, 4]
+
+
+@pytest.mark.skip(
+    reason="pounce's NLPResult exposes no field indicating the Schur block was "
+    "taken (it falls back transparently), so a wrong block cannot be detected at "
+    "solve time — only via the hand-checked index fixtures above. Documented gap; "
+    "would need an upstream pounce stats field (pounce#180 timing/Schur hooks)."
+)
+def test_schur_path_taken_indicator_unavailable():  # pragma: no cover - documentation
+    pass
+
+
 def test_no_eliminable_block_gives_empty():
     # a model where lm eliminates nothing -> empty reducible block
     m = dm.Model("free")

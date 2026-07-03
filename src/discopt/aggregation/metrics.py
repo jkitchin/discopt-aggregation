@@ -37,7 +37,8 @@ from discopt.modeling.core import Constraint
 
 from discopt.aggregation.api import aggregate
 from discopt.aggregation.exprwalk import classify_linearity, collect_variable_names
-from discopt.aggregation.strategies import STRATEGIES
+from discopt.aggregation.scalarize import scalarize_model
+from discopt.aggregation.strategies import resolve_strategy
 
 _DEFAULT_METHODS = ["ld1", "ecd2", "ld2", "d2", "gr", "lm"]
 
@@ -160,14 +161,25 @@ def compare_methods(
     aggregation method and reports the reduced model's structure.  This mirrors
     the paper's Table 4.  ``exact_hessian`` adds the AD-computed Hessian nonzero
     count to every row (slower).
+
+    The ``original`` row is computed on the *scalarized* model, matching the
+    aggregated rows (which scalarize internally), so the Var./NNZ/Hessian columns
+    are on the same per-scalar granularity — otherwise an array-variable original
+    undercounts against its reduced rows (T3).  Method names accept ``d<k>``
+    (``d3``, ``d4``, …) in addition to the six named strategies (T2).
     """
     methods = methods or list(_DEFAULT_METHODS)
     for meth in methods:
-        if meth not in STRATEGIES:
-            raise ValueError(f"unknown method {meth!r}; choose from {sorted(STRATEGIES)}")
+        resolve_strategy(meth)  # validate (accepts d<k>; raises for unknown)
 
+    baseline_model, smap = scalarize_model(model)
+    baseline_model = baseline_model if smap.scalarized else model
     rows: list[dict] = [
-        {"method": "original", "n_eliminated": 0, **asdict(model_structure(model, exact_hessian))}
+        {
+            "method": "original",
+            "n_eliminated": 0,
+            **asdict(model_structure(baseline_model, exact_hessian)),
+        }
     ]
     for meth in methods:
         result = aggregate(model, method=meth, recursive=recursive)

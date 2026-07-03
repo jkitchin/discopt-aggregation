@@ -64,11 +64,14 @@ def test_symbolic_derivative_example_runs():
 
 @pytest.mark.smoke
 def test_dual_recovery_example_runs():
-    examples.example_dual_recovery()
+    out = examples.example_dual_recovery()
+    assert out["available"] and out["residual"] < 1e-6  # valid recovered KKT point
 
 
 def test_recursive_duals_example_runs():
-    examples.example_recursive_duals()
+    out = examples.example_recursive_duals()
+    assert out["available"] and out["residual"] < 1e-6
+    assert out["n_passes"] >= 2  # genuinely multi-pass
 
 
 def test_structural_diagnosis_example_runs():
@@ -76,7 +79,8 @@ def test_structural_diagnosis_example_runs():
 
 
 def test_exact_tearing_example_runs():
-    examples.example_exact_tearing()
+    out = examples.example_exact_tearing()
+    assert out["n_kept"] == 3  # 3-cycle -> keep 2 + isolated d
 
 
 def test_scalable_tearing_example_runs():
@@ -104,7 +108,9 @@ def test_elimination_guards_example_runs():
 
 
 def test_bound_pruning_example_runs():
-    examples.example_bound_pruning()
+    out = examples.example_bound_pruning()
+    # w in [-2,2] provably inside [-10,10] -> both inequalities pruned
+    assert out["n_without"] == 2 and out["n_with"] == 0 and out["n_pruned"] == 2
 
 
 @pytest.mark.smoke
@@ -139,7 +145,13 @@ def test_presolve_overlap_example_runs():
 
 
 def test_reliability_example_runs():
-    examples.example_reliability()  # small local-solve sweep
+    out = examples.example_reliability()  # small local-solve sweep
+    # convex problem: every method converges on every instance, and no method
+    # converges fewer instances than another (the paper's headline direction)
+    for stats in out.values():
+        assert 0.0 <= stats["pct"] <= 100.0
+        assert stats["converged"] <= stats["instances"]
+    assert out["d2"]["converged"] >= out["ld1"]["converged"]
 
 
 @pytest.mark.smoke

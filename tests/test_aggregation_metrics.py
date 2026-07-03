@@ -134,8 +134,14 @@ def test_approximate_max_can_increase_jacobian_density():
 
 
 def test_compare_methods_unknown_method_raises():
-    with pytest.raises(ValueError, match="unknown method"):
+    with pytest.raises(ValueError, match="unknown"):
         compare_methods(_study_model(), methods=["nope"])
+
+
+def test_compare_methods_accepts_degree_k():
+    """T2: compare_methods accepts d<k> methods, not only the six named ones."""
+    rows = compare_methods(_study_model(), methods=["d2", "d3"])
+    assert [r["method"] for r in rows] == ["original", "d2", "d3"]
 
 
 # --------------------------------------------------------------------------- #
@@ -181,3 +187,22 @@ def test_exact_hessian_never_exceeds_structural_across_methods():
     for r in rows:
         assert r["nnz_hessian_exact"] is not None
         assert r["nnz_hessian_exact"] <= r["nnz_hessian"]
+
+
+def test_compare_methods_original_row_scalarized_granularity():
+    """T3: the original row is scalarized, matching aggregated rows' granularity."""
+    import discopt.modeling as dm
+
+    from discopt.aggregation.scalarize import scalarize_model
+
+    # a small array model (2 scalars) with an eliminable intermediate
+    m = dm.Model("t3")
+    c = m.continuous("c", shape=(2,), lb=-9, ub=9)
+    s = m.continuous("s", lb=-9, ub=9)
+    m.subject_to(s - (c[0] + c[1]) == 0.0)
+    m.minimize(c[0] ** 2 + c[1] ** 2 + s**2)
+    rows = compare_methods(m, methods=["d2"])
+    scal, _ = scalarize_model(m)
+    scal_nvars = sum(int(getattr(v, "size", 1)) for v in scal._variables)
+    assert rows[0]["method"] == "original"
+    assert rows[0]["n_variables"] == scal_nvars  # not the array-count of 2

@@ -116,3 +116,29 @@ def test_within_bounds_block_still_solves():
     full = el.recover({})
     assert full["x"] == pytest.approx(16 / 3, abs=1e-4)
     assert full["y"] == pytest.approx(14 / 3, abs=1e-4)
+
+
+def test_maximize_cyclic_block_round_trips():
+    """T4: eliminate_implicit's maximize objective rebuild path."""
+    m = dm.Model("maxk1")
+    x = m.continuous("x", lb=-9, ub=9)
+    y = m.continuous("y", lb=-9, ub=9)
+    t = m.continuous("t", lb=-9, ub=9)
+    m.subject_to(x - (0.5 * y + 3.0) == 0.0)
+    m.subject_to(y - (0.5 * x + 2.0) == 0.0)
+    m.maximize(-((t - 1.0) ** 2) - x**2 - y**2 - t)
+    direct_s, _i, _w, direct_obj = _local_solve(_maxk1_direct())
+    el = eliminate_implicit(m)
+    _s, _i, _w, reduced_obj = _local_solve(el.reduced_model)
+    assert float(reduced_obj) == pytest.approx(float(direct_obj), abs=1e-3)
+
+
+def _maxk1_direct():
+    m = dm.Model("maxk1d")
+    x = m.continuous("x", lb=-9, ub=9)
+    y = m.continuous("y", lb=-9, ub=9)
+    t = m.continuous("t", lb=-9, ub=9)
+    m.subject_to(x - (0.5 * y + 3.0) == 0.0)
+    m.subject_to(y - (0.5 * x + 2.0) == 0.0)
+    m.maximize(-((t - 1.0) ** 2) - x**2 - y**2 - t)
+    return m

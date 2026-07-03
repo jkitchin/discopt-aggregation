@@ -338,7 +338,7 @@ def example_symbolic_derivative() -> None:
     print("  gradients that multiplier recovery (G3) needs are built from these.")
 
 
-def example_dual_recovery() -> None:
+def example_dual_recovery() -> dict:
     """Show full-space Lagrange-multiplier recovery from a reduced solve (G3b)."""
     import numpy as np
 
@@ -371,9 +371,15 @@ def example_dual_recovery() -> None:
     print(f"  full-space KKT stationarity residual: {res:.2e}  (~0 -> valid KKT point)")
     print("  The eliminated defining equality's multiplier is reconstructed by")
     print("  reverse-order stationarity back-substitution using exact gradients.")
+    return {
+        "residual": float(res),
+        "available": dr.available,
+        "eliminated": agg.variables(),
+        "n_duals": len(dr.constraint_duals),
+    }
 
 
-def example_recursive_duals() -> None:
+def example_recursive_duals() -> dict:
     """Recover duals across the recursive default path + surface them in solve (D1)."""
     from discopt.aggregation.api import aggregate, solve
     from discopt.aggregation.duals import kkt_stationarity_residual
@@ -413,6 +419,12 @@ def example_recursive_duals() -> None:
     print("  recover_duals is single-pass; the default pipeline is recursive, so this")
     print("  composes each pass's constraint-origin map to back-substitute in the base")
     print("  model. Pass solve(..., recover_duals=True) to get duals on the result.")
+    return {
+        "residual": float(resid),
+        "available": dr.available,
+        "n_passes": res.aggregation.n_passes,
+        "n_duals": len(dr.constraint_duals),
+    }
 
 
 def example_structural_diagnosis() -> None:
@@ -455,7 +467,7 @@ def example_structural_diagnosis() -> None:
     print("  before elimination (Parker et al. 2023, pure-graph, no solve).")
 
 
-def example_exact_tearing() -> None:
+def example_exact_tearing() -> dict:
     """Show exact (maximum-acyclic-subset) tearing of cyclic blocks (E3)."""
     from discopt.aggregation.strategies import _max_acyclic_subset
 
@@ -471,6 +483,7 @@ def example_exact_tearing() -> None:
     print("  Guarantees the maximum eliminable subset of each cyclic block; greedy")
     print("  is often optimal on tiny blocks but has no such guarantee. Blocks past")
     print("  the brute-force cap use the scalable MILP tear (see next).")
+    return {"keep": sorted(keep), "n_kept": len(keep)}
 
 
 def example_scalable_tearing() -> None:
@@ -628,7 +641,7 @@ def example_block_triangular_ordering() -> None:
     print("  wiring to the solver is a one-line handoff once those issues land.")
 
 
-def example_bound_pruning() -> None:
+def example_bound_pruning() -> dict:
     """Show redundant box->inequality pruning via interval propagation (G2)."""
     from discopt.aggregation.strategies import aggregation_set
     from discopt.aggregation.transform import apply_aggregation
@@ -655,6 +668,11 @@ def example_bound_pruning() -> None:
     print("  This is what makes eliminating *bounded* intermediates a net win:")
     print("  without pruning, each bounded elimination would add up to two")
     print("  inequalities (paper §2.4), which can erase the size reduction.")
+    return {
+        "n_without": without.n_bound_inequalities,
+        "n_with": with_pruning.n_bound_inequalities,
+        "n_pruned": with_pruning.n_bound_pruned,
+    }
 
 
 def example_array_scalarization() -> None:
@@ -886,7 +904,7 @@ def example_presolve_overlap() -> None:
     print("  guard cannot fire (documented, like G4).")
 
 
-def example_reliability() -> None:
+def example_reliability() -> dict:
     """Convergence-reliability sweep over a parameter grid (S3)."""
     from discopt.aggregation.sweep import reliability_sweep
     from discopt.aggregation.testproblems import REACTION_DIFFUSION
@@ -903,6 +921,10 @@ def example_reliability() -> None:
     print("  This convex problem converges everywhere (100%). The paper's finding —")
     print("  that aggregation lets more instances converge — needs a problem tuned")
     print("  to fail in full space; the harness produces that comparison for any.")
+    return {
+        m: {"pct": r.pct_converged, "converged": r.n_converged, "instances": r.n_instances}
+        for m, r in results.items()
+    }
 
 
 def example_recycle_reliability() -> None:
