@@ -30,6 +30,7 @@ def test_registry_and_sweep_grid():
         "gas_pipeline",
         "recycle_loop",
         "cstr_dynamic",
+        "inventory_chain",
     }
     grid = REACTION_DIFFUSION.sweep_grid(points=11)
     assert len(grid) == 11 * 11  # two swept parameters

@@ -159,6 +159,33 @@ def cstr_dynamic(n: int = 8, k: float = 1.0, c_in: float = 1.0) -> Any:
     return m
 
 
+def inventory_chain(n: int = 6, demand: float = 2.0, holding: float = 0.5) -> Any:
+    """Integer inventory control over ``n`` periods — a MINLP with an integer chain.
+
+    Scalar integer order quantities ``q[t]`` and stock levels ``s[t]`` satisfy the
+    integer stock balance ``s[t] = s[t-1] + q[t] - d[t]`` with integer demand data
+    ``d[t]`` and integer initial stock ``s0`` — a fully-affine, unit-coefficient,
+    all-integer equality, so integrality of ``s[t]`` is *implied* and (with
+    ``integer_aggregation=True``) the whole stock chain is eliminable.  Because the
+    chain is affine (each ``s[t]`` expands to ``s0 + Σq - Σd``), substitution does
+    not blow up.  A **nonlinear** continuous holding cost (quadratic in stock)
+    makes it a genuine MINLP.  Sweep parameters: ``demand`` and ``holding``; ``n``
+    is the horizon.  The integers are scalar (not arrays) so they are aggregation
+    candidates — integer *array* variables are left as arrays, like binaries.
+    """
+    m = dm.Model(f"inventory_chain_{n}")
+    d = [(t % 3) + int(demand) for t in range(n)]  # integer demand data
+    s0 = 5
+    q = [m.integer(f"q{t}", lb=0, ub=10) for t in range(n)]
+    s = [m.integer(f"s{t}", lb=0, ub=50) for t in range(n)]
+    m.subject_to(s[0] - (s0 + q[0] - d[0]) == 0.0)
+    for t in range(1, n):
+        m.subject_to(s[t] - (s[t - 1] + q[t] - d[t]) == 0.0)  # all-integer, pivot 1
+    # order cost (linear) + nonlinear holding cost (quadratic in integer stock)
+    m.minimize(sum(q[t] for t in range(n)) + float(holding) * sum(s[t] ** 2 for t in range(n)))
+    return m
+
+
 def recycle_cycle(n: int = 4, feed: float = 2.0, alpha: float = 0.2, beta: float = 1.9) -> Any:
     """**Closed** recycle loop — the RL2 reliability probe (a searched candidate).
 
@@ -273,9 +300,24 @@ CSTR_DYNAMIC = TestProblem(
     default_size=8,
 )
 
+INVENTORY_CHAIN = TestProblem(
+    name="inventory_chain",
+    builder=inventory_chain,
+    nominal={"demand": 2.0, "holding": 0.5},
+    sweep={"demand": (1.0, 4.0), "holding": (0.1, 1.0)},
+    default_size=6,
+)
+
 PROBLEMS: dict[str, TestProblem] = {
     p.name: p
-    for p in (REACTION_DIFFUSION, UNIT_SELECTION, GAS_PIPELINE, RECYCLE_LOOP, CSTR_DYNAMIC)
+    for p in (
+        REACTION_DIFFUSION,
+        UNIT_SELECTION,
+        GAS_PIPELINE,
+        RECYCLE_LOOP,
+        CSTR_DYNAMIC,
+        INVENTORY_CHAIN,
+    )
 }
 
 # The RL2 reliability probe.  Deliberately NOT in ``PROBLEMS``: its implicit-path
@@ -298,11 +340,13 @@ __all__ = [
     "recycle_loop",
     "recycle_cycle",
     "cstr_dynamic",
+    "inventory_chain",
     "REACTION_DIFFUSION",
     "UNIT_SELECTION",
     "GAS_PIPELINE",
     "RECYCLE_LOOP",
     "RECYCLE_CYCLE",
     "CSTR_DYNAMIC",
+    "INVENTORY_CHAIN",
     "PROBLEMS",
 ]

@@ -14,6 +14,7 @@ and the constant term are integral.
 from __future__ import annotations
 
 import discopt.modeling as dm
+import numpy as np
 import pytest
 
 from discopt.aggregation.api import aggregate, solve
@@ -212,8 +213,12 @@ def test_flag_does_not_change_continuous_corpus():
     no-op; ``unit_selection``'s binaries appear only in inequalities (never in a
     defining equality), so they stay untouched even with the flag ON — an
     adversarial check that binaries are not spuriously eliminated.
+    ``inventory_chain`` is excluded: its integers appear in defining equalities,
+    so the flag is *supposed* to change its result (that is IA5's whole point).
     """
     for name, problem in PROBLEMS.items():
+        if name == "inventory_chain":
+            continue
         m = problem.build()
         for method in ("ld1", "d2", "lm"):
             off = aggregate(m, method=method, integer_aggregation=False).eliminated
@@ -530,3 +535,65 @@ def test_duals_unavailable_when_integer_eliminated():
     assert res.duals is not None
     assert not res.duals.available
     assert res.duals.reason == "eliminated_integer_variable"
+
+
+# --------------------------------------------------------------------------- #
+# IA5 — MINLP validation problem + no-regression corpus                        #
+# --------------------------------------------------------------------------- #
+def test_inventory_chain_roundtrips_with_integer_aggregation():
+    """IA5: the integer stock chain aggregates and round-trips exactly (MINLP)."""
+    from discopt.aggregation.testproblems import inventory_chain
+
+    n = 6
+    m = inventory_chain(n=n)
+    direct = inventory_chain(n=n).solve()  # global solver respects integrality
+    res = solve(m, method="lm", integer_aggregation=True, order="min_fill")
+    assert res.status == "optimal"
+    assert res.aggregation.n_eliminated >= n - 1  # the chain collapses
+    assert float(res.objective) == pytest.approx(float(direct.objective), abs=1e-6)
+    # every recovered eliminated integer is exactly integral
+    for name in res.aggregation.eliminated:
+        val = float(np.asarray(res.x[name]))
+        assert val.is_integer(), f"{name} recovered non-integral {val}"
+
+
+def test_inventory_chain_flag_off_eliminates_nothing():
+    """IA5: with the flag off (default), the integer inventory model is inert."""
+    from discopt.aggregation.testproblems import inventory_chain
+
+    assert aggregate(inventory_chain(n=6), method="lm").n_eliminated == 0
+
+
+def test_integer_flag_off_is_byte_identical_on_corpus():
+    """IA5 no-regression: flag off leaves every PROBLEMS model's eliminations unchanged.
+
+    The default (integer_aggregation=False) must reproduce 0.3.0 behavior exactly.
+    Continuous problems eliminate as before; the two integer/MINLP problems
+    (unit_selection, inventory_chain) eliminate only their continuous intermediates
+    (or nothing), never an integer/binary.
+    """
+    for name, problem in PROBLEMS.items():
+        m = problem.build()
+        for method in ("ld1", "d2", "lm"):
+            off = aggregate(m, method=method, integer_aggregation=False)
+            # no integer/binary variable is ever eliminated with the flag off
+            from discopt.modeling.core import VarType
+
+            int_names = {
+                v.name
+                for v in m._variables
+                if getattr(v, "var_type", None) in (VarType.INTEGER, VarType.BINARY)
+            }
+            assert not (set(off.eliminated) & int_names), (name, method, off.eliminated)
+
+
+def test_binaries_never_aggregated_even_with_flag_on():
+    """IA5 adversarial: unit_selection binaries stay put even with the flag ON.
+
+    They appear only in inequalities (x <= cap*b), not in defining equalities, so
+    the integrality-implication filter never admits them.
+    """
+    from discopt.aggregation.testproblems import unit_selection
+
+    agg = aggregate(unit_selection(), method="lm", integer_aggregation=True)
+    assert not any(name.startswith("b") for name in agg.eliminated)

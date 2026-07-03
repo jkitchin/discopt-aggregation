@@ -659,7 +659,15 @@ a hand-corrupted recovery map (monkeypatched non-integral definition) raises;
 returns the new reason.
 **Files.** `recovery.py`, `api.py`, `duals.py`, tests.
 
-### IA5. MINLP validation problem + no-regression corpus (M)
+### IA5. MINLP validation problem + no-regression corpus (M) — ✅ DONE
+
+`inventory_chain` added: scalar integer order/stock with the all-integer
+unit-coefficient balance `s[t]=s[t-1]+q[t]-d[t]` (integrality implied) and a
+nonlinear continuous holding cost → genuine MINLP. With the flag on, `lm`
+eliminates the whole integer chain (6/6 on n=6) and round-trips to the same
+optimum (obj 17.5) with integral recovered values. No-regression corpus: flag
+off never eliminates an integer/binary on any PROBLEMS model; unit_selection
+binaries stay put even flag-on. Registered + exported; packaging pin 83.
 
 **Design.** Add `inventory_chain` to `testproblems.py`: horizon `n`, integer
 order quantities `q[t] ∈ [0, 10]`, integer stock balance

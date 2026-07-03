@@ -135,6 +135,7 @@ from discopt.aggregation.testproblems import (
     TestProblem,
     cstr_dynamic,
     gas_pipeline,
+    inventory_chain,
     reaction_diffusion,
     recycle_cycle,
     recycle_loop,
@@ -229,6 +230,7 @@ __all__ = [
     "recycle_loop",
     "recycle_cycle",
     "cstr_dynamic",
+    "inventory_chain",
     # runtime benchmark (S2)
     "benchmark_model",
     "BenchmarkRow",
