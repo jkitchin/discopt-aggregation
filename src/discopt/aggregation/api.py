@@ -121,6 +121,7 @@ def aggregate(
     preserve_target_linearity: bool = False,
     tearing: str = "greedy",
     decomposable: bool = False,
+    order: str = "index",
     max_def_nodes: int | None = None,
     max_condition: float | None = None,
 ) -> AggregationResult:
@@ -154,6 +155,11 @@ def aggregate(
         decomposable: when True, local-search the ``lm`` maximum matching for a
             more decomposable block structure (higher Theorem-2 lower bound)
             before tearing. Default False.
+        order: greedy candidate order — ``"index"`` (default) or ``"min_fill"``
+            (R1), which visits constraints and picks variables in ascending
+            estimated-fill order so ``gr``/``lm`` prefer low-fan-out substitutions,
+            sharply shrinking the reduced-model expression graph (and its Hessian
+            cost) for the same eliminations.
         max_def_nodes: optional cap on the *resolved* defining-expression node
             count of an elimination; over-cap eliminations are dropped, bounding
             the reduced-model expression-graph / Hessian blow-up (D2). ``None``
@@ -194,6 +200,7 @@ def aggregate(
                 max_fill=max_fill,
                 tearing=tearing,
                 decomposable=decomposable,
+                order=order,
             )
             agg = resolve_strategy(stage)(inc)
             if preserve_target_linearity:
@@ -279,6 +286,7 @@ def solve(
     preserve_target_linearity: bool = False,
     tearing: str = "greedy",
     decomposable: bool = False,
+    order: str = "index",
     max_def_nodes: int | None = None,
     max_condition: float | None = None,
     recover_duals: bool = False,
@@ -308,6 +316,7 @@ def solve(
         preserve_target_linearity=preserve_target_linearity,
         tearing=tearing,
         decomposable=decomposable,
+        order=order,
         max_def_nodes=max_def_nodes,
         max_condition=max_condition,
     )

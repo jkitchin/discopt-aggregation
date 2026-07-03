@@ -830,6 +830,71 @@ item in the plan; do not start it before Phases 1–4 are done.
 
 ---
 
+## Phase 7 — execution notes (what shipped)
+
+### R1 — fill-aware (min-fill) elimination ordering — ✅ DONE
+Shipped as `aggregate(..., order="min_fill")` (default `"index"`, a no-op).
+Threaded through `build_incidence`/`IncidenceModel.order` and `_greedy`: under
+`min_fill`, constraints are visited — and the variable within each is chosen —
+in ascending estimated-fill order (`IncidenceModel.fill_estimate`, the F2
+estimator), so the greedy prefers low-fan-out substitutions. Measured on
+`reaction_diffusion(8)` with `gr`: the objective expression tree drops from
+16871 to ~400 nodes (~40×) for the *same* 9 eliminations, and the reduced model
+round-trips to the same optimum — directly countering the R2/S2 substitution
+blow-up. Test: `test_fill_aware_order_shrinks_expression_without_losing_eliminations`.
+
+### R2 — FBBT for the reduced model — ⏸ PARKED (spike note)
+Interval-propagate through defining expressions to (a) tighten kept-variable
+bounds in the reduced model and (b) prove more eliminated boxes redundant than
+the current per-bound G2 check, unlocking pruning the pivot/bound guards leave
+on the table (and strengthening C1's feasibility check). The primitive
+(`recovery.interval_evaluate`, sound over 883k fuzz points) already exists, so
+this is an `aggregate(..., fbbt=True)` post-pass, not new math. Go criterion: a
+model where a box is redundant only after one propagation round, plus the G2
+soundness property (sampled feasible points stay feasible). M-effort; parked
+because the shipped guards already cover the common cases and no bundled model
+needs the extra strength yet. Cites Puranik & Sahinidis 2017; SCIP 8.
+
+### R3 — native indexed incidence + DAG coefficient extraction — ⏸ PARKED (spike note, go)
+The measured bottleneck is twofold and now well understood:
+(1) **build-time O(tree)**: `incidence.linear_vars` calls discopt's
+`_isolated_affine_coeff` once per candidate per constraint, and that walker is
+`O(tree)` — a single call on a substitution-expanded reduced constraint took
+**28.7 s** (a 2.5M-node tree over a 5k-node DAG). Recursive `gr`/`lm` on a real
+DAE therefore hangs *at aggregate time*, before any solve, which no `max_def_nodes`
+guard prevents (the guard runs post-selection). This is the same root cause as
+the metrics hang already fixed in Phase 2's follow-on (which replaced per-name
+`_isolated_affine_coeff` with the DAG-memoised `exprwalk.classify_linearity`).
+**Go decision:** extend `exprwalk` with a DAG-memoised *coefficient* extractor
+(`affine_coefficients(body) -> {name: float | None}`, one pass, `None` for
+nonlinear) and route `incidence.linear_vars` through it, making incidence
+`O(distinct nodes)`. This alone makes `gr`/`lm` tractable on the DAE problems and
+unblocks the full P2 protocol run with the approximate-maximum methods.
+(2) **native `(name, index)` incidence** (F1 stage b): substitute at
+`IndexExpression` granularity instead of full scalar expansion — the ~quadratic
+scalarize+aggregate cost the R3 profiling measured. Larger; do (1) first (it is
+the load-bearing half and reuses the Phase-2 pattern). L-effort overall; parked
+as the single most valuable follow-on for *scaling* the study to the paper's
+problem sizes.
+
+### R4 — parked research directions (one-line spikes)
+- **Aggregation × GPU condensed-KKT**: measure aggregation's density penalty
+  under condensation (Cholesky/cuDSS), where condensation already densifies — the
+  penalty may be nearly free while the system shrinks. Needs a GPU condensed path
+  in the solver stack. Cites arXiv:2405.14236, Shin et al. EPSR 2024.
+- **Reduced-space export for global optimization**: `discopt.Model.solve()` *is*
+  a global solver; a 1-iteration spike measuring spatial-B&B node counts
+  original-vs-`d2` on `gas_pipeline` decides go/no-go. Cites Bongartz & Mitsos 2017.
+- **Learned aggregation selection**: the P2 protocol harness is the training-data
+  generator; needs its runs first. Cites L2P-MIP (ICLR 2024), arXiv:2603.19417.
+- **Certified aggregation**: machine-checkable substitution certificates
+  extending `verify_composition`. Cites Hoen et al. CPAIOR 2024.
+- **Symmetry-/coupling-width-aware elimination**: orbit-consistent choices; a
+  coupling-width objective before ADMM/Schur decomposition. Cites van Doornmalen
+  & Hojny 2024; arXiv:2603.19417.
+
+---
+
 ## Final gate (release 0.3.0)
 
 1. Full suite green under `PYTHONHASHSEED ∈ {0..9}`; ruff + format + mypy

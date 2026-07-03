@@ -367,3 +367,29 @@ def test_degree_filter_counts_noncandidate_variables():
     m2.subject_to(b - (a + 1) == 0.0)
     m2.minimize(a**2 + b**2)
     assert aggregate(m2, method="d2", recursive=False).eliminated == ["a"]
+
+
+def test_fill_aware_order_shrinks_expression_without_losing_eliminations():
+    """R1: order='min_fill' cuts substitution fan-out, keeping the eliminations.
+
+    Structural only (no solve): the headline is a far smaller substituted
+    expression graph — on reaction_diffusion(8), gr's objective tree drops ~40x
+    (16871 -> ~400 nodes) — for the same eliminations, directly countering the
+    aggressive-aggregation Hessian-cost blow-up.
+    """
+    from discopt.aggregation.api import aggregate
+    from discopt.aggregation.benchmark import _local_solve
+    from discopt.aggregation.hessian_cost import model_expression_size
+    from discopt.aggregation.testproblems import reaction_diffusion
+
+    m = reaction_diffusion(8)
+    base = aggregate(m, method="gr", order="index")
+    fill = aggregate(m, method="gr", order="min_fill")
+    assert fill.n_eliminated >= base.n_eliminated
+    base_tree, _ = model_expression_size(base.reduced_model)
+    fill_tree, _ = model_expression_size(fill.reduced_model)
+    assert fill_tree < base_tree // 2  # a large, not marginal, reduction
+
+    # the small min_fill-reduced model still solves locally to a valid optimum
+    status, _i, _w, _obj = _local_solve(fill.reduced_model)
+    assert status.endswith("OPTIMAL")

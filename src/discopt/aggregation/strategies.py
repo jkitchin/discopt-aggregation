@@ -122,17 +122,39 @@ def _greedy(
     tear cannot "steal" a variable matched in another block, which would collapse
     to a duplicate and corrupt the Theorem-2 bookkeeping.
 
+    When ``inc.order == "min_fill"`` (R1), constraints are visited in ascending
+    order of their cheapest eligible elimination's estimated fill
+    (:meth:`IncidenceModel.fill_estimate`) instead of index order, so the greedy
+    prefers low-fan-out substitutions — directly countering the substitution
+    expression-graph blow-up that drives aggressive aggregation's Hessian cost.
+
     Returns a ``{cid: var}`` matching.
     """
+    ordered = list(cids)
+    if getattr(inc, "order", "index") == "min_fill":
+
+        def _min_fill(cid: int) -> tuple[float, int]:
+            lin = inc.constraint_linear_vars(cid)
+            if restrict is not None:
+                lin = lin & restrict
+            fills = [inc.fill_estimate(cid, v) for v in lin]
+            return (min(fills) if fills else float("inf"), cid)  # cid breaks ties, stable
+
+        ordered = sorted(cids, key=_min_fill)
+
     matching: dict[int, str] = {}
     used: set[str] = set()
-    for cid in cids:
+    for cid in ordered:
         lin = inc.constraint_linear_vars(cid)
         allv = inc.constraint_vars(cid)
         if restrict is not None:
             lin = lin & restrict
             allv = allv & restrict
-        for x in sorted(lin):  # deterministic
+        # within a constraint, prefer the lowest-fill eligible variable under min_fill
+        candidates_v = sorted(lin)
+        if getattr(inc, "order", "index") == "min_fill":
+            candidates_v = sorted(lin, key=lambda v: (inc.fill_estimate(cid, v), v))
+        for x in candidates_v:
             if x not in used:
                 matching[cid] = x
                 used |= allv  # every (in-scope) var in this constraint

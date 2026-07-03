@@ -145,6 +145,7 @@ class IncidenceModel:
     max_fill: float | None = None
     tearing: str = "greedy"  # cyclic-block tear: "greedy" or "exact"
     decomposable: bool = False  # local-search matching for higher n_block (E4)
+    order: str = "index"  # greedy candidate order: "index" or "min_fill" (R1)
 
     def fill_estimate(self, cid: int, var: str) -> int:
         """Estimated new Jacobian incidences from eliminating ``var`` via ``cid``.
@@ -186,6 +187,7 @@ def build_incidence(
     max_fill: float | None = None,
     tearing: str = "greedy",
     decomposable: bool = False,
+    order: str = "index",
 ) -> IncidenceModel:
     """Build the bipartite incidence graphs for ``model``.
 
@@ -209,6 +211,7 @@ def build_incidence(
         max_fill=max_fill,
         tearing=tearing,
         decomposable=decomposable,
+        order=order,
     )
 
     # Total degree of each candidate across every constraint and the objective.

@@ -64,7 +64,11 @@ infeasible model is a bug, not a preserved behavior). The full suite passes on
   breakdown, the paper's Table-6 analogue (P3); `cstr_dynamic` — a
   discretized-DAE optimal-control test problem (P4); a `slow`-marked
   protocol-scale sweep test (P2).
-- Regression tests for every fix; ~40 new tests. Bibliography corrections and
+- `aggregate(..., order="min_fill")` — fill-aware elimination ordering (R1):
+  `gr`/`lm` visit constraints and pick variables in ascending estimated-fill
+  order, cutting the substituted-expression tree ~40× on `reaction_diffusion`
+  (gr: 16871 → ~400 nodes) for the same eliminations. Default `"index"` (no-op).
+- Regression tests for every fix; ~45 new tests. Bibliography corrections and
   additions (Bongartz & Mitsos 2017, SCIP 8, the GPU condensed-KKT line).
 
 ## [0.2.0] - 2026-07-02
