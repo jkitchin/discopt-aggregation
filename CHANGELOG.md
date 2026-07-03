@@ -5,7 +5,15 @@ All notable changes to `discopt-aggregation` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.4.0] - 2026-07-03
+
+Fourth release: the NLP-gaps + integer-aggregation plan
+(`design/aggregation-gaps-and-integer-plan.md`). Closes the scaling bottleneck
+that blocked the aggressive methods at DAE scale (SC1), completes dual recovery
+for maximize and active-bound cases (DU1/DU2), adds iteration-cap reliability
+plumbing with an honest-negative probe (RL1/RL2), and introduces **opt-in integer
+variable aggregation** (IA1-IA6). Soundness/scaling fixes are default-on; integer
+aggregation is default-off and a proven no-op with the flag off.
 
 ### Added
 

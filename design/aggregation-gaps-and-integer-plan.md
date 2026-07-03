@@ -714,7 +714,14 @@ implication conditions"). CHANGELOG under 0.4.0.
 
 ## Phase 5 — Release
 
-### X1. 0.4.0 gate (S)
+### X1. 0.4.0 gate (S) — ✅ DONE
+
+Version 0.4.0 across pyproject / __init__ / packaging pin / plugin.json;
+CHANGELOG [0.4.0] section summarising SC/DU/RL/IA. Full suite 446 passed / 1
+skipped, green on PYTHONHASHSEED 5; ruff+format+mypy clean; examples module
+exits 0; skill pip-install path verified. (Env note: the venv discopt.pth
+pointed base discopt at a since-deleted worktree — orthogonal to the code;
+run with PYTHONPATH=~/projects/discopt/python or repoint the .pth.)
 
 1. Full suite green (default and `-m slow`) on `PYTHONHASHSEED ∈ {0, 5, 7}`;
    ruff + format + mypy clean; `python -m discopt.aggregation.examples` exits 0.
