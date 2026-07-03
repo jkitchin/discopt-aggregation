@@ -291,7 +291,16 @@ def apply_aggregation(model: Any, agg: AggregationSet, prune_bounds: bool = True
             val = float(np.asarray(interval_evaluate(d, {})[0]))
             m_lo = 1e-9 * max(1.0, abs(lb0))
             m_hi = 1e-9 * max(1.0, abs(ub0))
-            if (lb0 > -_INF and val < lb0 - m_lo) or (ub0 < _INF and val > ub0 + m_hi):
+            out_of_box = (lb0 > -_INF and val < lb0 - m_lo) or (ub0 < _INF and val > ub0 + m_hi)
+            # IA2: a *fixed* integer/binary variable is feasible only when its
+            # value is integral.  An integer candidate reaches this branch only
+            # when the flag admitted it (integers are not candidates otherwise),
+            # so with the flag off nothing changes — a non-integral fix stays the
+            # solver's infeasibility to find.
+            non_integral = (
+                v0.var_type in (VarType.INTEGER, VarType.BINARY) and abs(val - round(val)) > 1e-9
+            )
+            if out_of_box or non_integral:
                 infeasible_eliminations.append((name, val, lb0, ub0))
             continue
         v = orig_by_name[name]

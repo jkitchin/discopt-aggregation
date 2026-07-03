@@ -550,7 +550,29 @@ inequalities) untouched for `ld1/d2/lm`. Full suite 427 passed, 1 skipped. Files
   corpus (compare eliminated lists).
 **Files.** `incidence.py`, `api.py`, tests (`test_aggregation_integer.py`, new).
 
-### IA2. Fixed integer variables and integral-infeasibility (S)
+### IA2. Fixed integer variables and integral-infeasibility (S) — ✅ DONE
+
+**Result.** A lone fixed integer/binary ``i == c`` (the pivot is the only variable
+in a fully-affine ±1 body) is now admitted as an integer candidate *regardless of
+``c``'s integrality*: in ``incidence._integer_edge_admissible`` the integral-constant
+gate is skipped when there are no companion variables (integrality of a lone pivot is
+not *implied* by others — it is *fixed*, so the constant-integrality question becomes a
+feasibility check, not an admission bar; a companion variable still requires the full
+IA1 rule, so ``y = i + 0.5`` and ``y = 0.5*i + z`` stay rejected). ``transform.apply_aggregation``'s
+fixed-variable branch (the C1 constant check) then flags an eliminated integer/binary
+whose fixed value is non-integral (``|val - round(val)| > 1e-9``) as an
+``infeasible_eliminations`` entry alongside the existing out-of-box check, so ``solve``
+returns ``infeasible``. Because integers are candidates only when
+``integer_aggregation=True``, this branch never fires for an integer with the flag off —
+a non-integral fix stays the solver's infeasibility to find, exactly as in 0.3.0.
+**Validation.** Four new tests in ``tests/test_aggregation_integer.py`` (the fractional
+case fails pre-fix — ``i`` was not admitted so nothing was flagged): ``i == 3`` eliminated,
+feasible, ``res.x['i'] == 3``; ``i == 2.5`` records ``infeasible_eliminations == ['i']``,
+warns, and ``solve`` returns ``infeasible``; ``i == 15`` (integral, out of ``[0,10]``)
+infeasible via the box check; and a flag-off freeze over ``{3, 2.5, 15}`` asserting
+``n_eliminated == 0`` and no infeasibility. Full suite 431 passed, 1 skipped; ruff +
+format + mypy clean. Files touched: ``incidence.py``, ``transform.py``,
+``tests/test_aggregation_integer.py``.
 
 **Design.** `y == c` with integer `y`: eliminable iff `c` integral (1e-9) and
 within `y`'s (integer) bounds. Non-integral `c` → append to

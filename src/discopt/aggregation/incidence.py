@@ -104,9 +104,15 @@ def _integer_edge_admissible(
     # deliberately scoped to ±1).
     if abs(abs(pivot_coeff) - 1.0) > int_tol:
         return False
-    for name, coeff in coeffs.items():
-        if name == pivot_name:
-            continue
+    companions = [(n, c) for n, c in coeffs.items() if n != pivot_name]
+    # A lone fixed integer (``i == c``, no companion variables): integrality of
+    # the pivot is not *implied* by other variables — it is simply *fixed* to the
+    # constant.  Admit it regardless of ``c``'s integrality so the transform can
+    # substitute the constant and, when ``c`` is fractional, record an
+    # integral-infeasibility (IA2) instead of silently leaving it for the solver.
+    if not companions:
+        return True
+    for name, coeff in companions:
         if name not in integer_names:
             return False  # a continuous companion breaks the implication
         assert coeff is not None  # guaranteed by the None-check above

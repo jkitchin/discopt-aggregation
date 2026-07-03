@@ -227,3 +227,72 @@ def test_solve_accepts_integer_aggregation_kwarg():
     from discopt.aggregation.api import solve
 
     assert "integer_aggregation" in inspect.signature(solve).parameters
+
+
+# --------------------------------------------------------------------------- #
+# IA2 — fixed integer variables and integral-infeasibility                     #
+# --------------------------------------------------------------------------- #
+def _fixed_integer_model(name, const):
+    """``i == const`` (integer i in [0,10]) with a continuous x tied to i."""
+    m = dm.Model(name)
+    x = m.continuous("x", lb=-10.0, ub=10.0)
+    i = m.integer("i", lb=0, ub=10)
+    m.subject_to(i - float(const) == 0.0)
+    m.minimize((x - i) ** 2)
+    return m
+
+
+def test_fixed_integer_eliminated_and_integral():
+    """IA2: ``i == 3`` (integer) is eliminated, feasible, and recovers exactly 3."""
+    from discopt.aggregation.api import solve
+
+    m = _fixed_integer_model("fix_int", 3)
+    agg = aggregate(m, method="ld1", integer_aggregation=True)
+    assert "i" in agg.eliminated
+    assert not agg.infeasible_eliminations
+    res = solve(m, method="ld1", integer_aggregation=True)
+    assert res.status != "infeasible"
+    assert res.x["i"] == 3
+
+
+def test_fixed_integer_fractional_is_infeasible():
+    """IA2: ``i == 2.5`` (integer) is integral-infeasible with the flag on.
+
+    The edge filter admits the lone fixed integer, the transform records the
+    fractional value as an infeasible elimination, and ``solve`` reports it —
+    rather than silently substituting a non-integral value into the model.
+    """
+    import warnings
+
+    from discopt.aggregation.api import solve
+
+    m = _fixed_integer_model("infeas_int", 2.5)
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        agg = aggregate(m, method="ld1", integer_aggregation=True)
+    assert [v for v, *_ in agg.infeasible_eliminations] == ["i"]
+    assert any("infeasible" in str(w.message) for w in caught)
+
+    res = solve(m, method="ld1", integer_aggregation=True)
+    assert res.status == "infeasible"
+
+
+def test_fixed_integer_out_of_bounds_is_infeasible():
+    """IA2: ``i == 15`` (integral but outside [0,10]) is infeasible via the box check."""
+    m = _fixed_integer_model("oob_int", 15)
+    agg = aggregate(m, method="ld1", integer_aggregation=True)
+    assert [v for v, *_ in agg.infeasible_eliminations] == ["i"]
+
+
+def test_fixed_integer_flag_off_is_solver_job():
+    """IA2: with the flag off an integer fixed to a fractional value is inert.
+
+    ``i`` is not a candidate, so nothing is eliminated and no infeasibility is
+    flagged — the non-integral fix is the solver's infeasibility to find, exactly
+    as in 0.3.0.  Freezing this guarantees the new behaviour is opt-in.
+    """
+    for const in (3, 2.5, 15):
+        m = _fixed_integer_model("off_int", const)
+        agg = aggregate(m, method="ld1", integer_aggregation=False)
+        assert agg.n_eliminated == 0
+        assert not agg.infeasible_eliminations
