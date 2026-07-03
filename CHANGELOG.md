@@ -18,6 +18,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   stops at the cap reports a non-`OPTIMAL` status (`ITERATION_LIMIT`) and so
   counts as **not converged**. Default (`options=None`/`solver_options=None`)
   leaves solves uncapped and behavior unchanged.
+- **RL2 reliability probe `recycle_cycle` (an honest negative).** A bounded search
+  for a bundled instance demonstrating the paper's "aggregation converges more
+  instances" headline found **no sound demonstration** on this stack, so no
+  `HARD_INSTANCE` is registered. The searched closed-recycle builder is shipped as
+  `recycle_cycle` / `RECYCLE_CYCLE` (a `TestProblem`, deliberately **not** in
+  `PROBLEMS`) for reproducibility. Findings, pinned as regression tests
+  (`tests/test_aggregation_reliability.py`) and written up in
+  `design/aggregation-stage2-results.md`: explicit `d2`/`lm` never converge more
+  instances (on the closed recycle `d2` is *sound* but needs *more* Newton
+  iterations, a reliability loss); the implicit path (`eliminate_implicit`) shows
+  a large *raw* convergence gap under a tight cap, but it is **confounded** by root
+  multiplicity — the bound-unaware inner Newton recovers a spurious negative root
+  (`R = -3.86` vs the full space's `R = 9.33`) on ~43% of the grid, so it reports a
+  different, sometimes unphysical solution rather than a genuine reliability win.
 
 ### Fixed
 

@@ -397,7 +397,37 @@ converged where the uncapped run converges; default behavior byte-identical
 (`options=None`); sweep tests green.
 **Files.** `benchmark.py`, `sweep.py`, tests.
 
-### RL2. A tuned-to-fail reliability instance (M–L, mostly search compute)
+### RL2. A tuned-to-fail reliability instance (M–L, mostly search compute) — ✅ DONE (PARK — honest negative)
+
+**Result (honest negative; no `HARD_INSTANCE` registered).** The bounded search
+(scratch scripts, ~30 min compute) swept iteration caps `{8,9,10,12,15}` × wide
+grids over three candidate families: `gas_pipeline` near infeasibility, a
+badly-scaled `cstr_dynamic` (`k∈[50,500]`, states scaled `~1e3` apart), and a
+**closed** recycle loop (`recycle_cycle`, added to `testproblems.py`) via the
+implicit path. **No sound demonstration of the paper's "converges more instances"
+headline was found on this stack.** Per-cell results: `gas_pipeline` near
+infeasibility — `original` 36/49, `d2` +0 (shared infeasibility; aggregation fails
+the *same* cells); badly-scaled `cstr_dynamic` — `d2` converges **−18 (n=8) / −24
+(n=12)** at cap 20 (substituting the rational rate rows *raises* nonlinearity, so
+the reduced model is harder, not better-conditioned — refuting the naive
+conditioning hope for explicit aggregation here); closed `recycle_cycle` at cap 9
+(needs ~10 full-space Newton iters) — `original` 8/49, `d2` **−8** (sound: `d2`
+eliminates 8/9 vars and POUNCE solves the bounded 1-var reduced model to the
+correct root `R≈9.33`, but it needs *more* iterations, 12 vs 10), implicit **+41
+but confounded**: the nonconvex conversion gives the recycle equation two roots and
+the bound-unaware inner Newton recovers the spurious **negative** root `R≈−3.86`
+(residual `~1e-13`, unphysical) on **21/49 (43%)** of cells, so it "converges" by
+reporting a *different* solution. Structural tension: hardness (nonconvexity/
+multiplicity) is exactly what makes the implicit recovery unsound, and monotone
+unique-root kinetics make the full space easy again (no gap). Per the RL2 written
+fallback (flaky/unsound instances are worse than none), **parked** with the search
+table appended here and in the stage2 doc; `recycle_cycle`/`RECYCLE_CYCLE` shipped
+as a documented probe (exported, **not** in `PROBLEMS`), findings pinned in
+`tests/test_aggregation_reliability.py` (3 fast soundness/structural tests + 1
+`slow` grid test, deterministic ×3). Files touched: `testproblems.py`,
+`__init__.py` (+`recycle_cycle` export, `__all__` 81→82), `tests/test_packaging.py`
+(pin bump), `tests/test_aggregation_reliability.py` (new), `CHANGELOG.md`,
+`design/aggregation-stage2-results.md`, skill `references/study-tools.md`.
 
 **Problem.** The paper's headline — aggregation converges more instances — has
 no bundled demonstration: every shipped problem converges ~100% for every

@@ -40,4 +40,4 @@ def test_public_api_has_no_duplicates_and_expected_size():
     # not reflected in the docs, or an accidental removal) is a loud failure
     # rather than a silently stale count.
     assert len(agg.__all__) == len(set(agg.__all__))
-    assert len(agg.__all__) == 81
+    assert len(agg.__all__) == 82

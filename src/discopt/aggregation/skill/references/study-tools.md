@@ -73,6 +73,17 @@ methods for sweeps; `gr`/`lm` reduced models can be slow/blow-up (guard with
 - `cstr_dynamic` — time-discretized CSTR optimal control with rational kinetics
   (discretized-DAE; `d2` eliminates the algebraic rate variables ~42%).
 
+`recycle_cycle` / `RECYCLE_CYCLE` is a **closed** recycle loop used as the RL2
+reliability probe. It is exported but **not** in `PROBLEMS`: a bounded search for a
+"tuned-to-fail" instance showing aggregation converging *more* instances was an
+**honest negative** on this stack. Explicit `d2`/`lm` are sound but never faster
+(on the closed cycle `d2` needs *more* Newton iterations, a reliability loss); the
+implicit path (`eliminate_implicit`) shows a raw convergence gap under a tight
+`max_iter`, but it is confounded — the nonconvex cycle has two roots and the
+bound-unaware inner Newton recovers the spurious negative one on ~43% of the grid.
+See `design/aggregation-stage2-results.md` (Reliability results, RL2) and
+`tests/test_aggregation_reliability.py`.
+
 ```python
 from discopt.aggregation import PROBLEMS
 p = PROBLEMS["cstr_dynamic"]

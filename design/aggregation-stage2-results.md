@@ -101,9 +101,56 @@ every method converges on every instance (100%, ~6 iterations) — so this probl
 does not exhibit the paper's *improvement*. Reproducing the paper's headline
 (aggregation lets more instances converge) requires a problem tuned so the
 full-space form fails within the iteration limit; the paper's authors searched
-parameter ranges for exactly this. The harness produces the comparison for any
-`TestProblem`; building such a deliberately-hard instance is the remaining step
-to quantify the reliability benefit on this stack.
+parameter ranges for exactly this.
+
+### RL2 bounded search — an honest negative
+
+A bounded search (item RL2; scratch scripts, ~30 min compute) swept, over
+iteration caps `{8, 9, 10, 12, 15}` and wide parameter grids, three candidate
+families comparing `original` vs explicit `d2`/`lm` vs the implicit path
+(`eliminate_implicit`):
+
+1. **`gas_pipeline` pushed toward infeasibility** (low supply pressure, demand
+   near the maximum deliverable);
+2. **a badly-scaled `cstr_dynamic`** (rate constant `k ∈ [50, 500]`, states
+   scaled up to `1e3` apart);
+3. **a closed recycle loop** `recycle_cycle` (a hard `R == β·Σ out` cycle over
+   nonconvex units), solved via `eliminate_implicit`.
+
+The search found **no sound demonstration** of the paper's headline on this
+stack. Per-cell counts (converged / total; `+Δ` vs `original`):
+
+| candidate | cap | original | explicit `d2` | implicit | verdict |
+|---|---:|---:|---:|---:|---|
+| `gas_pipeline` near-infeasibility (7×7) | 15/25/50 | 36/49 (73%) | 36 (+0) | — | shared infeasibility; `d2` fails the *same* cells |
+| badly-scaled `cstr_dynamic` (n=8, 100 cells) | 20 | 89/100 | 71 (−18) | — | `d2` substitutes rational rows → **harder**, not easier |
+| badly-scaled `cstr_dynamic` (n=12, 100 cells) | 20 | 77/100 | 53 (−24) | — | same, more pronounced at longer horizon |
+| closed `recycle_cycle` (7×7 `feed`×`alpha`) | 9 | 8/49 (16%) | 0 (−8) | 49 (+41)† | full space needs ~10 iters; see confound below |
+
+† **The implicit +41 is confounded, not a win.** The closed recycle's nonconvex
+conversion `out = in − α·in²` gives the recycle equation `R = g(R)` **two roots**.
+The full space (bounded, `R ≥ 0`) finds the physical root `R ≈ 9.33`; the
+bound-unaware inner Newton in `eliminate_implicit` recovers the *other*,
+**negative** root `R ≈ −3.86` at the nominal point (a valid root of the equations,
+residual `~1e-13`, but unphysical) — and disagrees with the full-space optimum or
+violates `R ≥ 0` on **21/49 (43%)** of the grid. So the implicit form "converges"
+by reporting a different, sometimes unphysical solution; it does not demonstrate
+converging to the *same* optimum on more instances.
+
+There is a structural tension behind the negative: what makes the full space hard
+(nonconvexity / root multiplicity) is exactly what makes the implicit inner solve
+land on a spurious root, and monotone (unique-root) kinetics make the full space
+easy again (7–8 iterations, no gap). Explicit aggregation, meanwhile, is *sound*
+but never faster: on the closed recycle `d2` eliminates 8 of 9 variables yet the
+surviving one-variable equation is *more* nonlinear, so the reduced solve needs at
+least as many Newton iterations (12 vs 10 at nominal) and converges on **fewer**
+cells under any cap. Per the RL2 protocol, a fragile/unsound instance is worse
+than none, so **no `HARD_INSTANCE` is registered** and `recycle_cycle` is kept out
+of the `PROBLEMS` reliability corpus (it is exported as a documented probe). The
+findings are pinned in `tests/test_aggregation_reliability.py` (fast
+soundness/structural facts + one `slow` grid test, deterministic ×3). Regenerate
+the per-cell CSV with `reliability_sweep(RECYCLE_CYCLE, methods=("d2",),
+points=7, solver_options={"max_iter": 9})` + `sweep_to_csv`.
 
 ## Comparison to the paper
 
@@ -114,7 +161,7 @@ to quantify the reliability benefit on this stack.
 | `gr` increases density; matching choice matters (`lm` milder) | ✅ (`nnz/con` 4.86 vs 3.71) |
 | Aggressive aggregation → Hessian-eval bottleneck | ✅ strongly (41 s reduced solve) |
 | `d2` a good balance | ✅ (fast solve, real elimination, no densification) |
-| Aggregation improves convergence reliability | ⚠️ harness ready; needs a tuned-to-fail instance |
+| Aggregation improves convergence reliability | ❌ honest negative on this stack (RL2): explicit aggregation is sound but never faster; the only raw gap (implicit path) is confounded by root multiplicity |
 
 **Stack differences from the paper.** The paper [cite:@naik2025aggregation]
 measures ASL/IPOPT; here it is JAX-compiled evaluation + POUNCE. The Hessian-cost

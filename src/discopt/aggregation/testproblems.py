@@ -159,6 +159,46 @@ def cstr_dynamic(n: int = 8, k: float = 1.0, c_in: float = 1.0) -> Any:
     return m
 
 
+def recycle_cycle(n: int = 4, feed: float = 2.0, alpha: float = 0.2, beta: float = 1.9) -> Any:
+    """**Closed** recycle loop — the RL2 reliability probe (a searched candidate).
+
+    Unlike :func:`recycle_loop` (a *tear-residual minimization*, an open cascade
+    that aggregates explicitly), this closes the loop with a hard equality
+    ``R == beta * sum(out)``, forming one irreducible algebraic cycle in
+    ``{in[i], out[i], R}``.  Each unit applies the nonconvex conversion
+    ``out[i] = in[i] - alpha*in[i]^2`` with ``in[i] = (feed + R)/n``.  The cycle
+    is *not* explicitly eliminable (structure-preserving/degree-2 methods cannot
+    break a cycle); it is the target of :func:`eliminate_implicit`, which replaces
+    the whole block by a differentiable inner Newton solve.  Sweep parameters:
+    ``feed`` and ``alpha``; ``beta`` is the loop gain.
+
+    Reliability finding (plan item RL2 — an **honest negative**, not a shipped
+    win).  This instance was tuned so the full-space POUNCE solve hits a tight
+    iteration cap on most cells (it needs ~10 Newton iterations; at ``max_iter=9``
+    it converges on only ~16% of a 7x7 ``feed``x``alpha`` grid) while the implicit
+    inner Newton always solves the cycle.  That *raw* convergence gap is real but
+    **confounded**: the quadratic conversion gives the recycle equation two roots,
+    and the bound-unaware inner solve lands on the spurious one on ~43% of cells
+    (at the nominal point it recovers ``R = -3.86``, violating ``R >= 0`` while the
+    full space finds ``R = 9.33``).  The implicit form therefore "converges" by
+    reporting a *different, sometimes unphysical* solution — it does not
+    demonstrate the paper's headline (converging to the *same* optimum on more
+    instances).  Hence ``recycle_cycle`` is a documented probe, deliberately **not**
+    added to :data:`PROBLEMS` (the reliability corpus) nor registered as a
+    ``HARD_INSTANCE``.  See ``design/aggregation-stage2-results.md``.
+    """
+    m = dm.Model(f"recycle_cycle_{n}")
+    r = m.continuous("R", lb=0.0, ub=100.0)
+    inp = [m.continuous(f"in{i}", lb=0.0, ub=200.0) for i in range(n)]
+    out = [m.continuous(f"out{i}", lb=-200.0, ub=200.0) for i in range(n)]
+    for i in range(n):
+        m.subject_to(inp[i] - (feed + r) / n == 0.0)  # split (in linear, eliminable)
+        m.subject_to(out[i] - (inp[i] - alpha * inp[i] ** 2) == 0.0)  # nonconvex conversion
+    m.subject_to(r - beta * sum(out) == 0.0)  # closed recycle: irreducible cycle
+    m.minimize(1e-6 * r * r)
+    return m
+
+
 @dataclass
 class TestProblem:
     """A parameterized test problem.
@@ -238,6 +278,17 @@ PROBLEMS: dict[str, TestProblem] = {
     for p in (REACTION_DIFFUSION, UNIT_SELECTION, GAS_PIPELINE, RECYCLE_LOOP, CSTR_DYNAMIC)
 }
 
+# The RL2 reliability probe.  Deliberately NOT in ``PROBLEMS``: its implicit-path
+# convergence gap is confounded by root multiplicity (see ``recycle_cycle``), so it
+# is an honest-negative demonstration, not a reliability win to seed the corpus.
+RECYCLE_CYCLE = TestProblem(
+    name="recycle_cycle",
+    builder=recycle_cycle,
+    nominal={"feed": 2.0, "alpha": 0.2},
+    sweep={"feed": (1.0, 5.0), "alpha": (0.1, 0.4)},
+    default_size=4,
+)
+
 
 __all__ = [
     "TestProblem",
@@ -245,11 +296,13 @@ __all__ = [
     "unit_selection",
     "gas_pipeline",
     "recycle_loop",
+    "recycle_cycle",
     "cstr_dynamic",
     "REACTION_DIFFUSION",
     "UNIT_SELECTION",
     "GAS_PIPELINE",
     "RECYCLE_LOOP",
+    "RECYCLE_CYCLE",
     "CSTR_DYNAMIC",
     "PROBLEMS",
 ]
