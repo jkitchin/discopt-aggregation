@@ -10,9 +10,15 @@ multiplier ``μ_c`` such that the stationarity condition is uniformly
 
     ∇f(z*) + Σ_c μ_c ∇(body_c)(z*) + (bound terms) = 0
 
-for equalities and inequalities alike (verified empirically).  For an eliminated
-variable ``v_i`` with defining constraint ``cid_i`` (``∂body_{cid_i}/∂v_i =
-coeff_i``), that row gives
+for equalities and inequalities alike (verified empirically).  A **maximise**
+objective is reported by discopt in the ``minimise(-f)`` convention — a direct
+solve of ``m.maximize(-(x**2) - y**2)`` s.t. ``y - (x+1) == 0`` yields multipliers
+that satisfy ``∇(-f) + Σ μ ∇body = 0`` (not ``∇f + …``; verified empirically).
+Recovery therefore multiplies the objective-gradient term by ``obj_sign``
+(``-1`` for maximise, ``+1`` for minimise) so recovered duals stay in discopt's
+own convention and remain directly comparable to a direct solve.  For an
+eliminated variable ``v_i`` with defining constraint ``cid_i``
+(``∂body_{cid_i}/∂v_i = coeff_i``), that row gives
 
     μ_{cid_i} = -( ∂f/∂v_i
                   + Σ_{surviving c} μ_c ∂body_c/∂v_i
@@ -28,10 +34,11 @@ Two entry points: :func:`recover_duals` for a single ``apply_aggregation``
 result, and :func:`recover_duals_from_result` for a full (recursive, multi-pass)
 :class:`~discopt.aggregation.api.AggregationResult` — the latter composes each
 pass's constraint-origin map so the same back-substitution runs in the base
-model.  Scope for both: minimise objective and no *active* variable bounds on
-eliminated variables (interior solution) — validated by the full-space KKT
-stationarity residual.  If any required derivative is unsupported, recovery
-reports ``available=False`` rather than a wrong result.
+model.  Scope for both: minimise **or** maximise objective (the sign is
+normalised, see below) and no *active* variable bounds on eliminated variables
+(interior solution) — validated by the full-space KKT stationarity residual.  If
+any required derivative is unsupported, recovery reports ``available=False``
+rather than a wrong result.
 """
 
 from __future__ import annotations
@@ -52,15 +59,15 @@ class DualRecovery:
 
     Attributes:
         available: False if recovery could not be performed (e.g. an unsupported
-            derivative, a maximise objective, missing reduced duals, an active
-            eliminated-variable bound, a singular defining system, or a failed
-            KKT self-check).
+            derivative, missing reduced duals, an active eliminated-variable
+            bound, a singular defining system, or a failed KKT self-check).
+            A maximise objective is **in** scope (its sign is normalised).
         constraint_duals: ``{original_cid: multiplier}`` for every original
             constraint — surviving ones mapped from the reduced solve, defining
             equalities recovered by solving the defining-multiplier system.
         full_x: the recovered full-space primal point used.
         reason: when ``available`` is False, a short machine-readable tag for why
-            (e.g. ``"maximise"``, ``"active_eliminated_bound:y"``,
+            (e.g. ``"active_eliminated_bound:y"``,
             ``"unsupported_derivative"``, ``"singular_defining_system"``,
             ``"residual_check_failed"``, ``"missing_reduced_duals"``).
     """
@@ -83,6 +90,19 @@ def _grad(expr: Any, var: str, values: dict[str, Any], cache: dict) -> float | N
 
 
 _INF_BOUND = 9.9e19  # below discopt's +-9.999e19 sentinel
+
+
+def _objective_sign(model: Any) -> float:
+    """``+1`` for a minimise objective, ``-1`` for maximise.
+
+    discopt reports a maximise objective's multipliers in the ``minimise(-f)``
+    convention (verified empirically — see the module docstring), so the
+    objective-gradient term in every stationarity row is scaled by this sign.
+    """
+    obj = getattr(model, "_objective", None)
+    if obj is not None and obj.sense != ObjectiveSense.MINIMIZE:
+        return -1.0
+    return 1.0
 
 
 def _active_eliminated_bound(
@@ -136,6 +156,7 @@ def _solve_defining_duals(
     cids = [cid for _v, cid in elim_pairs]
     obj = model._objective
     obj_expr = obj.expression if obj is not None else None
+    obj_sign = _objective_sign(model)
     amat = np.zeros((n, n))
     bvec = np.zeros(n)
     for i, (vi, _cid_i) in enumerate(elim_pairs):
@@ -144,7 +165,7 @@ def _solve_defining_duals(
             g = _grad(obj_expr, vi, full_x, cache)
             if g is None:
                 return None
-            rhs += g
+            rhs += obj_sign * g
         for cid, mu in surviving.items():
             if mu == 0.0:
                 continue
@@ -206,9 +227,6 @@ def recover_duals(reduced: Any, reduced_result: Any) -> DualRecovery:
     if agg is None:
         return DualRecovery(available=False, reason="no_aggregation_set")
     model = agg.incidence.model
-    obj = model._objective
-    if obj is not None and obj.sense != ObjectiveSense.MINIMIZE:
-        return DualRecovery(available=False, reason="maximise")  # sign handling out of scope
 
     rx = getattr(reduced_result, "x", None)
     rduals = getattr(reduced_result, "constraint_duals", None)
@@ -260,17 +278,14 @@ def recover_duals_from_result(result: Any, reduced_result: Any) -> DualRecovery:
     (the combined defining system is strictly lower triangular, so this is a valid
     upper-triangular back-substitution).
 
-    Scope: minimise objective and interior solution (no active eliminated-variable
-    bounds); returns ``available=False`` otherwise, or if any required derivative
-    is unsupported.  Validated by :func:`kkt_stationarity_residual` on the base
-    model.
+    Scope: minimise **or** maximise objective (sign normalised) and interior
+    solution (no active eliminated-variable bounds); returns ``available=False``
+    otherwise, or if any required derivative is unsupported.  Validated by
+    :func:`kkt_stationarity_residual` on the base model.
     """
     base = getattr(result, "base_model", None)
     if base is None:
         return DualRecovery(available=False, reason="no_base_model")
-    obj = base._objective
-    if obj is not None and obj.sense != ObjectiveSense.MINIMIZE:
-        return DualRecovery(available=False, reason="maximise")  # sign handling out of scope
 
     rx = getattr(reduced_result, "x", None)
     rduals = getattr(reduced_result, "constraint_duals", None)
@@ -318,6 +333,7 @@ def kkt_stationarity_residual(
     """
     obj = model._objective
     obj_expr = obj.expression if obj is not None else None
+    obj_sign = _objective_sign(model)
     cache: dict = {}
     worst = 0.0
     for v in model._variables:
@@ -329,7 +345,7 @@ def kkt_stationarity_residual(
             g = _grad(obj_expr, name, full_x, cache)
             if g is None:
                 return float("inf")
-            res += g
+            res += obj_sign * g
         for cid, mu in constraint_duals.items():
             c = model._constraints[cid]
             if not isinstance(c, Constraint):

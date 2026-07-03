@@ -5,6 +5,19 @@ All notable changes to `discopt-aggregation` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Dual recovery now supports maximize objectives (DU1).** `recover_duals` /
+  `recover_duals_from_result` previously returned `available=False,
+  reason="maximise"`. discopt reports a maximize objective's multipliers in the
+  `minimize(-f)` convention (verified empirically), so recovery now normalises the
+  objective-gradient sign (`obj_sign = -1` for maximize) in both the defining-
+  multiplier solve and `kkt_stationarity_residual`. Recovered duals match a direct
+  solve of the maximize model to 1e-6 and pass the KKT self-check; minimize-path
+  behavior is unchanged. Default-on.
+
 ## [0.3.0] - 2026-07-02
 
 Third release: the post-audit review-fixes plan (`design/aggregation-review-fixes-plan.md`).

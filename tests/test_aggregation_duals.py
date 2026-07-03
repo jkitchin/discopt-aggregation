@@ -88,19 +88,34 @@ def test_with_active_inequality():
         assert mu == pytest.approx(want, abs=1e-4)
 
 
-@pytest.mark.unit
-def test_maximize_objective_is_unavailable():
-    m = dm.Model("max")
-    x = m.continuous("x", lb=-5, ub=5)
-    y = m.continuous("y", lb=-9, ub=9)
-    m.subject_to(y - (x + 1) == 0.0)
-    m.maximize(-(x**2 + y**2))
-    agg = aggregation_set(m, method="d2")
-    rm = apply_aggregation(m, agg)
+def test_maximize_objective_recovers_duals():
+    """DU1: maximise duals are recovered in discopt's own sign convention.
 
-    class _Fake:
-        x = {"x": 0.0}
-        constraint_duals: dict = {}
+    A maximise model with an eliminable variable (``y = x + 1``) and an *active*
+    inequality (``x >= -0.3``).  discopt reports a maximise objective's
+    multipliers in the ``minimise(-f)`` convention, so recovery scales the
+    objective-gradient term by ``-1``; the recovered duals must then match the
+    original model's direct-solve duals and pass the full-space KKT self-check.
+    """
 
-    dr = recover_duals(rm, _Fake())
-    assert dr.available is False  # maximise sign handling out of scope
+    def build():
+        m = dm.Model("max")
+        x = m.continuous("x", lb=-5, ub=5)
+        y = m.continuous("y", lb=-9, ub=9)
+        m.subject_to(y - (x + 1) == 0.0)  # defining (eliminable)
+        m.subject_to(x >= -0.3)  # surviving inequality, active at the optimum
+        m.maximize(-(x**2) - y**2)
+        return m
+
+    model = build()
+    agg = aggregation_set(model, method="d2")
+    rm = apply_aggregation(model, agg)
+    rr = rm.model.solve()
+    dr = recover_duals(rm, rr)
+    assert dr.available, dr.reason
+    res = kkt_stationarity_residual(model, dr.full_x, dr.constraint_duals)
+    assert res < 1e-6, f"KKT residual {res}"
+    original = build().solve()
+    for cid, mu in dr.constraint_duals.items():
+        want = float(np.asarray(original.constraint_duals[f"c{cid}"]).reshape(()))
+        assert mu == pytest.approx(want, abs=1e-6)

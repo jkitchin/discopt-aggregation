@@ -232,7 +232,22 @@ correctness at n=100 (recovered values match closed form); the full suite green.
 
 ## Phase 2 — Dual completeness
 
-### DU1. Maximize-objective dual recovery (S–M)
+### DU1. Maximize-objective dual recovery (S–M) — ✅ DONE
+
+**Result.** Verified discopt's convention empirically first: a direct solve of a
+maximise model (`m.maximize(-(x**2) - y**2)` s.t. `y - (x+1) == 0`) reports
+multipliers satisfying `∇(-f) + Σ μ ∇body = 0` — i.e. discopt normalises a
+maximise objective as `minimise(-f)`. Implemented a single `_objective_sign(model)`
+helper (`-1` maximise, `+1` minimise) applied to the objective-gradient term in
+both `_solve_defining_duals`'s RHS and `kkt_stationarity_residual`; removed the
+two `reason="maximise"` bails from `recover_duals` / `recover_duals_from_result`.
+Recovered maximise duals now match a direct solve to 1e-6 and pass the KKT
+self-check on both single-pass and recursive paths. The two out-of-scope tests
+(`test_maximize_objective_is_unavailable`, `test_maximize_is_out_of_scope`) were
+replaced by positive tests over a maximise model with an eliminable variable and
+an *active* inequality; minimize-path tests untouched. Docstrings, the skill
+(`recovery-and-implicit.md`, `troubleshooting.md`), `example_dual_recovery`, and
+CHANGELOG updated. Full suite 404 passed.
 
 **Problem.** `recover_duals` / `recover_duals_from_result` return
 `available=False, reason="maximise"`. The fix is a sign normalization, but the

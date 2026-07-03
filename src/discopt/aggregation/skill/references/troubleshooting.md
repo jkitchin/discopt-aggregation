@@ -57,7 +57,6 @@ the solver would.
 ## Dual recovery reports `available=False`
 
 `res.duals.reason` tells you why:
-- `"maximise"` — maximize objectives are out of scope (sign convention).
 - `"active_eliminated_bound:<name>"` — an eliminated variable sits on a finite
   bound at the optimum; the γ-term isn't modeled. Recovery is unavailable, not
   wrong.
@@ -66,7 +65,10 @@ the solver would.
   derivative couldn't be formed, or the KKT self-check failed; recovery declines
   rather than return a wrong multiplier.
 Single-pass and recursive (multi-pass) paths are both supported for
-minimize + interior solutions.
+minimize **and** maximize + interior solutions. A maximize objective is reported
+by discopt in the `minimize(-f)` convention; recovery normalises the sign, so
+recovered duals stay directly comparable to a direct solve (no `"maximise"`
+bail).
 
 ## Nothing gets eliminated
 

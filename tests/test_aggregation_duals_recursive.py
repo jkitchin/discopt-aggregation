@@ -101,15 +101,33 @@ def test_result_carries_dual_recovery_bookkeeping():
     assert all(0 <= p < result.n_passes for _v, _c, p in result.elim_records)
 
 
-def test_maximize_is_out_of_scope():
-    m = dm.Model("maxo")
-    x = m.continuous("x", lb=-5, ub=5)
-    y = m.continuous("y", lb=-9, ub=9)
-    m.subject_to(y - (x + 1) == 0.0)
-    m.maximize(-(x**2) - y**2)
-    result = aggregate(m, method="d2")
+def test_maximize_recovers_duals():
+    """DU1: the recursive path recovers maximise duals in discopt's convention.
+
+    discopt reports maximise multipliers in the ``minimise(-f)`` convention, so
+    recovery scales the objective-gradient term by ``-1``.  With an eliminable
+    ``y = x + 1`` and an active inequality ``x >= -0.3``, the recovered duals must
+    match the original model's direct-solve duals and pass the KKT self-check.
+    """
+
+    def build():
+        m = dm.Model("maxo")
+        x = m.continuous("x", lb=-5, ub=5)
+        y = m.continuous("y", lb=-9, ub=9)
+        m.subject_to(y - (x + 1) == 0.0)  # defining (eliminable)
+        m.subject_to(x >= -0.3)  # surviving inequality, active at the optimum
+        m.maximize(-(x**2) - y**2)
+        return m
+
+    result = aggregate(build(), method="d2")
     dr = recover_duals_from_result(result, result.reduced_model.solve())
-    assert not dr.available  # maximise sign handling documented out of scope
+    assert dr.available, dr.reason
+    resid = kkt_stationarity_residual(result.base_model, dr.full_x, dr.constraint_duals)
+    assert resid < 1e-6, f"KKT residual {resid}"
+    original = build().solve()
+    for cid, mu in dr.constraint_duals.items():
+        want = float(np.asarray(original.constraint_duals[f"c{cid}"]).reshape(()))
+        assert mu == pytest.approx(want, abs=1e-6)
 
 
 def test_cross_pass_coupling_recovered_by_linear_solve():

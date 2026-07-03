@@ -371,11 +371,35 @@ def example_dual_recovery() -> dict:
     print(f"  full-space KKT stationarity residual: {res:.2e}  (~0 -> valid KKT point)")
     print("  The eliminated defining equality's multiplier is reconstructed by")
     print("  reverse-order stationarity back-substitution using exact gradients.")
+
+    # DU1: the same recovery handles a *maximise* objective.  discopt reports a
+    # maximise objective's multipliers in the minimise(-f) convention, so recovery
+    # scales the objective-gradient term by -1; recovered duals then match a
+    # direct solve of the maximise model exactly.
+    mx = dm.Model("kktmax")
+    mxx = mx.continuous("x", lb=-5, ub=5)
+    mxy = mx.continuous("y", lb=-9, ub=9)
+    mx.subject_to(mxy - (mxx + 1) == 0.0)  # defining (eliminated)
+    mx.subject_to(mxx >= -0.3)  # active inequality
+    mx.maximize(-(mxx**2) - mxy**2)
+    agg_mx = aggregation_set(mx, method="d2")
+    rm_mx = apply_aggregation(mx, agg_mx)
+    dr_mx = recover_duals(rm_mx, rm_mx.model.solve())
+    res_mx = kkt_stationarity_residual(mx, dr_mx.full_x, dr_mx.constraint_duals)
+    orig_mx = mx.solve()
+    print(
+        f"  maximise model: recovered {{{', '.join(f'{k}:{v:.3f}' for k, v in sorted(dr_mx.constraint_duals.items()))}}}"
+        f"  vs direct {{{', '.join(f'{i}:{float(np.asarray(v)):.3f}' for i, v in enumerate(orig_mx.constraint_duals.values()))}}}"
+    )
+    print(f"  maximise KKT residual: {res_mx:.2e}  (sign convention normalised)")
+
     return {
         "residual": float(res),
         "available": dr.available,
         "eliminated": agg.variables(),
         "n_duals": len(dr.constraint_duals),
+        "maximise_available": dr_mx.available,
+        "maximise_residual": float(res_mx),
     }
 
 

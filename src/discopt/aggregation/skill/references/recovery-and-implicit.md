@@ -31,9 +31,11 @@ result: `available=True` means the full-space multipliers satisfy stationarity t
 ~1e-6, so a residual algebra gap becomes an honest `available=False`, never a
 wrong number.
 
-**Scope:** minimize objective, interior solution (no active bound on an
-eliminated variable). Maximize and active-eliminated-bound γ-terms report
-`available=False`.
+**Scope:** minimize **or** maximize objective, interior solution (no active bound
+on an eliminated variable). A maximize objective's multipliers are reported by
+discopt in the `minimize(-f)` convention; recovery normalises the objective-
+gradient sign so recovered duals stay directly comparable to a direct solve.
+Active-eliminated-bound γ-terms still report `available=False`.
 
 Validate independently with:
 ```python
