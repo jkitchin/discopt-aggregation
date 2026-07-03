@@ -295,6 +295,9 @@ def test_fixed_integer_flag_off_is_solver_job():
         m = _fixed_integer_model("off_int", const)
         agg = aggregate(m, method="ld1", integer_aggregation=False)
         assert agg.n_eliminated == 0
+        # and no infeasibility is manufactured: with the flag off the integer is
+        # never a candidate, so even a fractional fix is left for the solver.
+        assert not agg.infeasible_eliminations
 
 
 # --------------------------------------------------------------------------- #
