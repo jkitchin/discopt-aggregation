@@ -42,7 +42,7 @@ from discopt.modeling.core import (
 )
 
 from discopt.aggregation.exprwalk import child_exprs, collect_variable_names
-from discopt.aggregation.recovery import RecoveryMap, interval_evaluate
+from discopt.aggregation.recovery import RecoveryMap, evaluate_expression, interval_evaluate
 from discopt.aggregation.strategies import AggregationSet
 
 try:  # pragma: no cover - import shim
@@ -295,20 +295,40 @@ def apply_aggregation(model: Any, agg: AggregationSet, prune_bounds: bool = True
             v0 = orig_by_name[name]
             lb0 = float(np.min(v0.lb))
             ub0 = float(np.max(v0.ub))
-            val = float(np.asarray(interval_evaluate(d, {})[0]))
             m_lo = 1e-9 * max(1.0, abs(lb0))
             m_hi = 1e-9 * max(1.0, abs(ub0))
-            out_of_box = (lb0 > -_INF and val < lb0 - m_lo) or (ub0 < _INF and val > ub0 + m_hi)
-            # IA2: a *fixed* integer/binary variable is feasible only when its
-            # value is integral.  An integer candidate reaches this branch only
-            # when the flag admitted it (integers are not candidates otherwise),
-            # so with the flag off nothing changes — a non-integral fix stays the
-            # solver's infeasibility to find.
-            non_integral = (
-                v0.var_type in (VarType.INTEGER, VarType.BINARY) and abs(val - round(val)) > 1e-9
-            )
-            if out_of_box or non_integral:
-                infeasible_eliminations.append((name, val, lb0, ub0))
+            # The definition is variable-free here, so it has an *exact* scalar
+            # value — use it.  An interval endpoint of a conservative enclosure is
+            # NOT the value: ``sin(1)`` encloses to ``(-1, 1)`` whose lower bound
+            # ``-1`` is meaningless, and comparing it to the box declared feasible
+            # models infeasible.
+            try:
+                val = float(np.asarray(evaluate_expression(d, {})))
+                val_known = bool(np.isfinite(val))
+            except Exception:  # noqa: BLE001 - any non-evaluable node falls back
+                val_known = False
+            if val_known:
+                out_of_box = (lb0 > -_INF and val < lb0 - m_lo) or (ub0 < _INF and val > ub0 + m_hi)
+                # IA2: a *fixed* integer/binary variable is feasible only when its
+                # value is integral.  An integer candidate reaches this branch only
+                # when the flag admitted it (integers are not candidates otherwise),
+                # so with the flag off nothing changes — a non-integral fix stays
+                # the solver's infeasibility to find.
+                non_integral = (
+                    v0.var_type in (VarType.INTEGER, VarType.BINARY)
+                    and abs(val - round(val)) > 1e-9
+                )
+                if out_of_box or non_integral:
+                    infeasible_eliminations.append((name, val, lb0, ub0))
+            else:
+                # No exact value (an opaque, non-evaluable definition): fall back
+                # to the conservative enclosure and flag infeasible only when the
+                # WHOLE enclosure lies outside the box, never on a single endpoint.
+                lo_i, hi_i = interval_evaluate(d, {})
+                lo = float(np.asarray(lo_i))
+                hi = float(np.asarray(hi_i))
+                if (lb0 > -_INF and hi < lb0 - m_lo) or (ub0 < _INF and lo > ub0 + m_hi):
+                    infeasible_eliminations.append((name, lo, lb0, ub0))
             continue
         v = orig_by_name[name]
         lb = float(np.min(v.lb))

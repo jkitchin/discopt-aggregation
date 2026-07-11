@@ -243,6 +243,39 @@ def test_fixed_variable_within_box_stays_feasible():
     assert res.status == "optimal"
 
 
+@pytest.mark.smoke
+def test_feasible_transcendental_fix_not_flagged_infeasible():
+    """RC3: a fixed variable defined by a variable-free transcendental (y == sin(1),
+    0.841, inside [0, 2]) is feasible.  The check must use the expression's exact
+    value, not an interval endpoint of its conservative enclosure (sin encloses to
+    (-1, 1), whose lower bound -1 would falsely read out-of-box)."""
+    from discopt.aggregation.api import solve
+
+    m = dm.Model("feas_trans")
+    y = m.continuous("y", lb=0.0, ub=2.0)
+    m.subject_to(y == dm.sin(1))
+    m.minimize(y)
+    res = solve(m, method="ld1")
+    assert res.status == "optimal"
+    assert res.x["y"] == pytest.approx(0.8414709848, abs=1e-6)
+
+
+@pytest.mark.smoke
+def test_infeasible_transcendental_fix_is_flagged():
+    """RC3 boundary: exact evaluation still detects a genuine violation — sin(1) =
+    0.841 is outside [0, 0.5]."""
+    from discopt.aggregation.api import solve
+
+    m = dm.Model("infeas_trans")
+    y = m.continuous("y", lb=0.0, ub=0.5)
+    x = m.continuous("x", lb=-10.0, ub=10.0)
+    m.subject_to(y == dm.sin(1))
+    m.subject_to(x - y >= 0.0)
+    m.minimize(x**2)
+    res = solve(m, method="ld1")
+    assert res.status == "infeasible"
+
+
 def test_reduced_model_preserves_binary_bounds():
     """RC2: a binary tightened to a fixed value (b.lb = 1) keeps that bound in the
     reduced model.  binary() takes no lb/ub, so the recreation must copy the
