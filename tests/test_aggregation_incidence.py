@@ -292,6 +292,36 @@ def test_affine_coefficients_constant_term_and_signs():
     assert coeffs["y"] == pytest.approx(2.0)
 
 
+def test_sum_over_scalar_operand_stays_affine():
+    """A ``sum`` whose operand is provably scalar is the identity: coefficients
+    pass through unchanged (regression guard for the RC1 decline not over-firing)."""
+    from discopt.aggregation.exprwalk import affine_coefficients, classify_linearity
+
+    m = dm.Model("sc")
+    y = m.continuous("y")
+    const, coeffs = affine_coefficients(dm.sum(2 * y + 1))
+    assert const == pytest.approx(1.0)
+    assert coeffs["y"] == pytest.approx(2.0)
+    assert classify_linearity(dm.sum(2 * y + 1)) == {"y": True}
+
+
+def test_sum_over_array_operand_declines_scalar_coefficient():
+    """RC1: a scalar variable broadcast against an array *inside* a ``sum`` has no
+    single affine coefficient this walk can certify (discopt evaluates the sum as
+    ``2*y + sum(x)``, its shape inference reports the operand array-shaped, and a
+    naive per-element read gives yet a third value).  The walk must therefore
+    decline — report ``y`` nonlinear — rather than emit the un-summed per-element
+    coefficient, which previously drove an unsound elimination."""
+    from discopt.aggregation.exprwalk import affine_coefficients, classify_linearity
+
+    m = dm.Model("arr")
+    y = m.continuous("y")
+    x = m.continuous("x", shape=(3,), lb=1, ub=1)
+    _const, coeffs = affine_coefficients(dm.sum(2 * y + x))
+    assert coeffs.get("y") is None  # declined, never the pre-fix 2.0
+    assert classify_linearity(dm.sum(2 * y + x))["y"] is False
+
+
 def test_affine_coefficients_hand_models_match_oracle():
     """Hand bodies: affine_coefficients agrees with _isolated_affine_coeff."""
     from discopt._jax.dependent_vars import _isolated_affine_coeff

@@ -108,6 +108,51 @@ def collect_variable_names(expr: Any) -> tuple[set[str], bool]:
     return names, analyzable
 
 
+def _provably_scalar(node: Any) -> bool:
+    """True only if ``node`` is certified to evaluate to a scalar (shape ``()``).
+
+    An array-valued result can only originate from an array-shaped *leaf*
+    (variable, constant, or parameter): broadcasting, indexing, reduction and
+    matmul all yield a scalar when every leaf they combine is scalar.  So a node
+    all of whose reachable leaves are scalar is itself scalar, whatever the
+    interior ops.  Returns ``False`` — declining to certify — for any non-scalar
+    leaf or any node :func:`child_exprs` cannot walk (which could hide an array
+    leaf).  Soundness-conservative: a caller may rely on a ``True`` result, but a
+    ``False`` means "not certified", not "definitely array".
+
+    Used to decide whether a :class:`SumExpression` (a reduction) merely passes
+    its operand through — true only when the operand is scalar, so the sum is the
+    identity — versus collapsing scalar-variable coefficients by an element count
+    the affine walk does not track.
+    """
+    seen: set[int] = set()
+    stack: list[Any] = [node]
+    while stack:
+        n = stack.pop()
+        nid = id(n)
+        if nid in seen:
+            continue
+        seen.add(nid)
+        if isinstance(n, Variable):
+            if getattr(n, "shape", ()) != ():
+                return False
+            continue
+        if isinstance(n, (Constant, Parameter)):
+            try:
+                if np.asarray(getattr(n, "value", None)).size != 1:
+                    return False
+            except (TypeError, ValueError):
+                return False
+            continue
+        if isinstance(n, (int, float)):
+            continue
+        kids = child_exprs(n)
+        if kids is None:
+            return False
+        stack.extend(kids)
+    return True
+
+
 # Unary ops that preserve affine (linear) participation of their operand's vars.
 _AFFINE_UNARY = frozenset({"+", "-", "neg", "pos"})
 
@@ -182,7 +227,12 @@ def classify_linearity(expr: Any, nonlinear_names: frozenset[str] = frozenset())
             # power (or any other binary op): variable base/operands -> nonlinear
             return nonlinear(merge(left, right))
         if isinstance(node, SumExpression):
-            return analyze(node.operand)
+            # A sum over an array operand multiplies each scalar variable's
+            # coefficient by the (untracked) element count, so only a sum whose
+            # operand is provably scalar (the sum is then the identity) preserves
+            # affine coefficients; otherwise every reachable variable is nonlinear.
+            inner = analyze(node.operand)
+            return inner if _provably_scalar(node.operand) else nonlinear(inner)
         if isinstance(node, SumOverExpression):
             out: dict[str, bool] = {}
             for t in node.terms:
@@ -327,7 +377,15 @@ def affine_coefficients(
             # power or any other binary op over variable operands -> nonlinear
             return collapse_nonlinear(left, right)
         if isinstance(node, SumExpression):
-            return analyze(node.operand)
+            # See classify_linearity: a sum only preserves affine coefficients
+            # when its operand is provably scalar (identity sum).  Over an array
+            # operand the true coefficient is the per-element one times the
+            # element count, which this walk does not track, so decline by
+            # collapsing every reachable variable to nonlinear.
+            inner = analyze(node.operand)
+            if inner is None:
+                return None
+            return inner if _provably_scalar(node.operand) else collapse_nonlinear(inner)
         if isinstance(node, SumOverExpression):
             reps = [analyze(t) for t in node.terms]
             return collapse_nonlinear(*reps)

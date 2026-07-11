@@ -241,3 +241,31 @@ def test_fixed_variable_within_box_stays_feasible():
     assert not agg.infeasible_eliminations
     res = solve(m, method="ld1")
     assert res.status == "optimal"
+
+
+@pytest.mark.smoke
+def test_sum_broadcast_elimination_matches_direct_solve():
+    """RC1 soundness: with a scalar variable broadcast against an array inside a
+    ``sum`` in the defining equality, aggregation must not eliminate through the
+    ambiguous construct (discopt's shape inference and its evaluator disagree on
+    the summed coefficient).  The invariant that matters is that
+    aggregate->solve->recover reproduces discopt's own direct solve, whatever
+    value that is."""
+    from discopt.aggregation.api import aggregate, solve
+
+    def build():
+        m = dm.Model("sum_bcast")
+        y = m.continuous("y", lb=-10.0, ub=10.0)
+        x = m.continuous("x", shape=(3,), lb=1.0, ub=1.0)
+        m.subject_to(dm.sum(2 * y + x) == 0.0)
+        m.minimize(y**2)
+        return m, y
+
+    m, _ = build()
+    agg = aggregate(m)
+    assert agg.eliminated == []  # declines the ambiguous sum elimination
+
+    reduced_res = solve(build()[0])
+    direct_res = build()[0].solve()
+    assert reduced_res.status == direct_res.status == "optimal"
+    assert reduced_res.x["y"] == pytest.approx(float(direct_res.x["y"]), abs=1e-6)
