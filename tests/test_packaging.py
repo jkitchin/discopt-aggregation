@@ -5,7 +5,11 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-import tomllib
+
+try:  # Python 3.11+ has tomllib in the stdlib; 3.10 needs the tomli backport.
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - exercised only on Python 3.10
+    import tomli as tomllib
 
 import discopt.aggregation as agg
 
