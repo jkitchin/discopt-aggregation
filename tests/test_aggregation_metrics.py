@@ -65,6 +65,32 @@ def test_hessian_zero_for_linear_model():
     assert model_structure(m).nnz_hessian == 0
 
 
+def test_hessian_array_diagonal_block_expanded_per_scalar():
+    """RC9: an array variable's diagonal Hessian block is counted per scalar
+    element (n(n+1)/2), so the documented invariant nnz_hessian_exact <=
+    nnz_hessian holds even for array variables — it did not when the block counted
+    as a single name-pair."""
+    m = dm.Model("harr")
+    x = m.continuous("x", shape=(4,), lb=-5, ub=5)
+    y = m.continuous("y", lb=-5, ub=5)
+    m.minimize(dm.sum(x**2) + y**4)
+    s = model_structure(m, exact_hessian=True)
+    # {x} diagonal 4*5/2 = 10, {y} diagonal 1, {x,y} off-diagonal 4*1 = 4 -> 15
+    assert s.nnz_hessian == 15
+    assert s.nnz_hessian_exact is not None
+    assert s.nnz_hessian_exact <= s.nnz_hessian
+
+
+def test_hessian_scalar_counts_unchanged_by_expansion():
+    """RC9 no-regression: for scalar-only models the per-scalar expansion equals
+    the plain name-pair count (paper Table 4 numbers are preserved)."""
+    m = dm.Model("hsc")
+    a = m.continuous("a", lb=-5, ub=5)
+    b = m.continuous("b", lb=-5, ub=5)
+    m.minimize(a**2 + a * b + b**2)  # {a}, {b}, {a, b} -> 3
+    assert model_structure(m).nnz_hessian == 3
+
+
 # --------------------------------------------------------------------------- #
 # compare_methods                                                             #
 # --------------------------------------------------------------------------- #

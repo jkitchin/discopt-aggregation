@@ -17,15 +17,19 @@ Metric definitions
 - ``avg_linear_nnz_per_con`` — average number of *linearly*-participating
   variables per constraint.
 - ``nnz_hessian`` — size of the structural Lagrangian-Hessian coupling pattern:
-  the set of unordered variable pairs ``{i, j}`` (including diagonal ``{i}``)
-  that co-participate *nonlinearly* in the objective or any constraint.  This is
-  a well-defined superset of the exact second-derivative sparsity (it couples
-  every pair among a function's nonlinearly-appearing variables); it captures the
+  the unordered variable pairs ``{i, j}`` (including diagonal ``{i}``) that
+  co-participate *nonlinearly* in the objective or any constraint, expanded to
+  per-scalar entries (a size-``n`` diagonal block counts ``n(n+1)/2``, an
+  off-diagonal block of sizes ``n_u, n_v`` counts ``n_u n_v``).  This is a
+  well-defined superset of the exact second-derivative sparsity (it couples every
+  pair among a function's nonlinearly-appearing variables); it captures the
   paper's finding that aggressive aggregation inflates Hessian coupling.
 
-Metrics are computed at variable-*name* granularity, which is exact for models
-whose variables are scalar (each distinct name in a constraint is one
-incidence).  Array variables are counted once per name per constraint.
+The Jacobian metrics are computed at variable-*name* granularity, which is exact
+for models whose variables are scalar (each distinct name in a constraint is one
+incidence); array variables are counted once per name per constraint.  The
+Hessian pattern is expanded to per-scalar entries (above) so it stays a superset
+of the exact per-scalar count even for array variables.
 """
 
 from __future__ import annotations
@@ -124,7 +128,8 @@ def model_structure(model: Any, exact_hessian: bool = False) -> ModelStructure:
         linmap = classify_linearity(c.body, array_names)
         total_lin += sum(1 for nm in names if linmap.get(nm, False))
 
-    # Structural Lagrangian-Hessian coupling pattern.
+    # Structural Lagrangian-Hessian coupling pattern, as unique nonlinearly
+    # co-participating variable-*name* pairs (including the diagonal {i}).
     pairs: set[frozenset] = set()
     for body in _function_bodies(model):
         names, analyzable = collect_variable_names(body)
@@ -136,6 +141,22 @@ def model_structure(model: Any, exact_hessian: bool = False) -> ModelStructure:
             for j in range(i, len(nl)):
                 pairs.add(frozenset({nl[i], nl[j]}))
 
+    # Expand each name-pair to per-scalar entries so the count is a true superset
+    # of the exact (per-scalar) Hessian lower triangle: a diagonal block of a
+    # size-n variable contributes n(n+1)/2 lower-triangular entries, an
+    # off-diagonal block of sizes n_u, n_v contributes n_u*n_v.  For scalar-only
+    # models every size is 1, so this equals ``len(pairs)`` exactly — the
+    # numbers the paper's Table 4 reproduction depends on are unchanged.
+    size_by_name = {v.name: int(getattr(v, "size", 1)) for v in model._variables}
+    nnz_h = 0
+    for p in pairs:
+        members = tuple(p)
+        if len(members) == 1:
+            n = size_by_name.get(members[0], 1)
+            nnz_h += n * (n + 1) // 2
+        else:
+            nnz_h += size_by_name.get(members[0], 1) * size_by_name.get(members[1], 1)
+
     return ModelStructure(
         n_variables=n_vars,
         n_constraints=n_con,
@@ -143,7 +164,7 @@ def model_structure(model: Any, exact_hessian: bool = False) -> ModelStructure:
         nnz_jacobian=total_nnz,
         avg_nnz_per_con=(total_nnz / n_con) if n_con else 0.0,
         avg_linear_nnz_per_con=(total_lin / n_con) if n_con else 0.0,
-        nnz_hessian=len(pairs),
+        nnz_hessian=nnz_h,
         nnz_hessian_exact=exact_hessian_nnz(model) if exact_hessian else None,
     )
 
