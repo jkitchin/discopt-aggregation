@@ -243,6 +243,52 @@ def test_fixed_variable_within_box_stays_feasible():
     assert res.status == "optimal"
 
 
+def test_reduced_model_preserves_binary_bounds():
+    """RC2: a binary tightened to a fixed value (b.lb = 1) keeps that bound in the
+    reduced model.  binary() takes no lb/ub, so the recreation must copy the
+    mutated bounds explicitly, or a fixed binary is silently re-freed to [0, 1]."""
+    import numpy as np
+
+    from discopt.aggregation.api import aggregate
+
+    m = dm.Model("binbounds")
+    b = m.binary("b")
+    b.lb = [1.0]  # fix b = 1
+    c = m.binary("c")  # left at [0, 1]
+    y = m.continuous("y", lb=-10.0, ub=10.0)
+    w = m.continuous("w", lb=-10.0, ub=10.0)
+    m.subject_to(y == b + 1)  # doubleton: eliminates y, b survives
+    m.subject_to(w == c + 1)  # doubleton: eliminates w, c survives
+    m.minimize(y + w)
+
+    result = aggregate(m)
+    assert result.stats["n_eliminated"] == 2  # ensure the rebuild path ran
+    rb = {v.name: v for v in result.reduced_model._variables}
+    assert float(np.asarray(rb["b"].lb)) == 1.0 and float(np.asarray(rb["b"].ub)) == 1.0
+    assert float(np.asarray(rb["c"].lb)) == 0.0 and float(np.asarray(rb["c"].ub)) == 1.0
+
+
+@pytest.mark.smoke
+def test_binary_fix_elimination_matches_direct_solve():
+    """RC2 end-to-end: eliminating around a fixed binary must reproduce discopt's
+    own solve.  Previously the reduced model dropped b's fixed bound and returned
+    b=0 (infeasible in the original)."""
+    from discopt.aggregation.api import solve
+
+    def build():
+        m = dm.Model("binfix")
+        b = m.binary("b")
+        b.lb = [1.0]
+        y = m.continuous("y", lb=-10.0, ub=10.0)
+        m.subject_to(y == b + 1)
+        m.minimize(y)
+        return m
+
+    res = solve(build())
+    assert res.status == "optimal"
+    assert round(float(res.x["b"])) == 1 and res.x["y"] == pytest.approx(2.0, abs=1e-6)
+
+
 @pytest.mark.smoke
 def test_sum_broadcast_elimination_matches_direct_solve():
     """RC1 soundness: with a scalar variable broadcast against an array inside a

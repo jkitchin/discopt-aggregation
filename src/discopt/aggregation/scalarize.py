@@ -199,7 +199,12 @@ def _recreate(new_model: Any, v: Any) -> Any:
     if v.var_type == VarType.INTEGER:
         return new_model.integer(v.name, shape=v.shape, lb=v.lb, ub=v.ub)
     if v.var_type == VarType.BINARY:
-        return new_model.binary(v.name, shape=v.shape)
+        nv = new_model.binary(v.name, shape=v.shape)
+        # binary() takes no bounds; a tightened binary must keep them, as an
+        # ndarray shaped like the variable (the form the solver expects).
+        nv.lb = np.asarray(v.lb, dtype=float).reshape(v.shape)
+        nv.ub = np.asarray(v.ub, dtype=float).reshape(v.shape)
+        return nv
     raise NotImplementedError(f"unsupported variable type {v.var_type!r}")  # pragma: no cover
 
 

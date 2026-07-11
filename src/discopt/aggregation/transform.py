@@ -245,7 +245,13 @@ def apply_aggregation(model: Any, agg: AggregationSet, prune_bounds: bool = True
         elif v.var_type == VarType.INTEGER:
             nv = reduced.integer(v.name, shape=v.shape, lb=v.lb, ub=v.ub)
         elif v.var_type == VarType.BINARY:
+            # binary() takes no lb/ub (a binary is [0,1] by construction), but a
+            # binary can be *tightened* to a fixed 0 or 1 by mutating its bounds
+            # (b.lb = [1.0]); those bounds are part of the model and must survive
+            # into the reduced model, else a fixed binary is silently re-freed.
             nv = reduced.binary(v.name, shape=v.shape)
+            nv.lb = np.asarray(v.lb, dtype=float).reshape(v.shape)
+            nv.ub = np.asarray(v.ub, dtype=float).reshape(v.shape)
         else:  # pragma: no cover - defensive
             raise NotImplementedError(f"unsupported variable type {v.var_type!r}")
         newvar_map[v.name] = nv
