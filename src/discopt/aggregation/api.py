@@ -342,13 +342,18 @@ def solve(
         max_condition=max_condition,
         integer_aggregation=integer_aggregation,
     )
-    # A fixed-variable elimination proved the model infeasible (C1): report it
-    # instead of solving a reduced model that dropped the violated bound.
+    # A fixed-variable elimination proved the model infeasible (C1/IA2): report
+    # it instead of solving a reduced model that dropped the violated bound.  Do
+    # not attempt full recovery here — for a non-integral integer fix (IA2) the
+    # recovery map deliberately asserts on exactly this violation, so recovering
+    # would crash rather than report.  The infeasibility is already carried by
+    # ``aggregation.infeasible_eliminations``; there is no feasible point to
+    # return.
     if result.infeasible_eliminations:
         return AggregatedSolveResult(
             status="infeasible",
             objective=None,
-            x=result.recover_full({}) if not result.reduced_model._variables else {},
+            x={},
             reduced_result=None,
             aggregation=result,
         )

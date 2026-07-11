@@ -283,6 +283,40 @@ def test_fixed_integer_fractional_is_infeasible():
     assert res.status == "infeasible"
 
 
+def test_fixed_integer_fractional_all_eliminated_reports_infeasible():
+    """RC5: when a non-integral integer fix eliminates *every* variable, solve()
+    must report infeasible, not crash.  The infeasible early-return previously
+    called recover_full({}), and the recovery map asserts integrality on exactly
+    this violation, so it raised AssertionError instead of returning a status."""
+    from discopt.aggregation.api import solve
+
+    m = dm.Model("all_elim_infeas")
+    i = m.integer("i", lb=0, ub=10)
+    m.subject_to(i == 2.5)  # fixes i non-integrally; i is the only variable
+    m.minimize(i)
+
+    res = solve(m, integer_aggregation=True)  # must not raise
+    assert res.status == "infeasible"
+    assert res.x == {}  # nothing feasible to recover on the infeasible branch
+
+
+def test_partial_elimination_nonintegral_integer_reports_infeasible():
+    """RC5 variant: a non-integral integer fix alongside a surviving variable is
+    reported infeasible without crashing."""
+    from discopt.aggregation.api import solve
+
+    m = dm.Model("partial_infeas")
+    i = m.integer("i", lb=0, ub=10)
+    x = m.continuous("x", lb=-5.0, ub=5.0)
+    m.subject_to(i == 2.5)
+    m.subject_to(x >= 1.0)
+    m.minimize(x**2 + i)
+
+    res = solve(m, integer_aggregation=True)
+    assert res.status == "infeasible"
+    assert res.x == {}
+
+
 def test_fixed_integer_out_of_bounds_is_infeasible():
     """IA2: ``i == 15`` (integral but outside [0,10]) is infeasible via the box check."""
     m = _fixed_integer_model("oob_int", 15)
