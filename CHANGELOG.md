@@ -5,6 +5,71 @@ All notable changes to `discopt-aggregation` are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.4.1] - 2026-07-11
+
+Correctness-review release (`design/aggregation-0.4.1-correctness-plan.md`): a
+full-repo review found nine defects, two of which returned silently wrong
+"optimal" or "infeasible" results under default settings. All are fixed with
+regression tests; the soundness fixes are default-on (they change behaviour only
+where the old result was wrong). No API changes.
+
+### Fixed
+
+- **Wrong coefficient through `sum` of a broadcast (RC1).** A scalar variable
+  broadcast against an array inside `dm.sum(...)` had no single certifiable affine
+  coefficient (discopt's evaluator, its shape inference, and a per-element read
+  disagree). Aggregation now declines to eliminate through such a construct
+  instead of substituting an unsound coefficient; the reduced solve matches
+  discopt's direct solve.
+- **Binary bounds dropped in the reduced model (RC2).** A binary tightened to a
+  fixed value (`b.lb = 1`) was re-freed to `[0, 1]` when recreated in the reduced
+  (or scalarized/implicit) model, so an aggregated solve could return a point
+  infeasible in the original. Bounds are now carried over.
+- **Feasible model reported infeasible (RC3).** The fixed-variable feasibility
+  check used an interval-enclosure endpoint as the value, so a fix like
+  `y == sin(1)` inside its box was flagged out-of-box. It now uses the exact value
+  of the (variable-free) definition, with a whole-enclosure fallback.
+- **Variable-free nonlinear constant dropped (RC4).** `sin(2)` and similar
+  variable-free nonlinear terms contributed `0.0` to the affine constant instead
+  of their exact value, which could wrongly admit an integer elimination. The
+  exact constant is now used.
+- **`solve()` crashed instead of reporting infeasible (RC5).** A non-integral
+  integer fix that eliminated every variable raised `AssertionError` from recovery
+  rather than returning `status="infeasible"`.
+- **`eliminate_implicit` KeyError on coupled cyclic blocks (RC6).** A block whose
+  equations referenced a variable eliminated by another block crashed; it is now
+  left in place (declined), matching the documented contract.
+- **Dual recovery on a constraint-free reduced model (RC7).** An interior solution
+  whose reduced model has no surviving constraints (`constraint_duals=None`) is
+  now recovered from stationarity instead of declining as "missing".
+- **`free_variables` over-reported the degrees of freedom (RC8).** It returned
+  every variable in the under-determined block; it now returns only the unmatched
+  (free) ones, plus a new `degrees_of_freedom` count.
+- **Hessian nnz invariant broke for array variables (RC9).** `nnz_hessian` is now
+  expanded to per-scalar entries so the documented
+  `nnz_hessian_exact <= nnz_hessian` holds for array variables; scalar-model
+  numbers (paper Table 4) are unchanged.
+- **Packaging: `test_packaging` failed to collect on Python 3.10** (stdlib
+  `tomllib` is 3.11+); added a `tomli` fallback.
+
+### Changed
+
+- `diagnostics.free_variables` now reports only unmatched under-determined
+  variables (see RC8); added `StructuralDiagnosis.degrees_of_freedom`.
+- Aggregation stats now include `tearing_fallbacks` (the promised N2 counter of
+  exact-tear MILP failures that fell back to greedy).
+
+### Docs / tests
+
+- Skill docs no longer claim integer/binary variables are "never eliminated"
+  (contradicting the opt-in `integer_aggregation` feature); `inventory_chain`
+  added to the documented `PROBLEMS`.
+- Renamed the mis-named committed skill symlink `variable-aggregation 2` ->
+  `variable-aggregation`; `install --force` onto a symlink no longer crashes.
+- `pytest -m unit` is now guaranteed solver-free (marker sweep + conftest hook +
+  a meta-test); added coverage for guard×integer interplay, scalarized dual
+  recovery, and a wheel-content packaging test wired into CI.
+
 ## [0.4.0] - 2026-07-03
 
 Fourth release: the NLP-gaps + integer-aggregation plan

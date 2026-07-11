@@ -20,7 +20,7 @@ _ROOT = Path(__file__).resolve().parent.parent
 
 def test_version_is_exposed():
     assert isinstance(agg.__version__, str)
-    assert agg.__version__ == "0.4.0"
+    assert agg.__version__ == "0.4.1"
 
 
 def test_version_matches_pyproject():
