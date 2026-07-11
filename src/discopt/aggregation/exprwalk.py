@@ -336,6 +336,25 @@ def affine_coefficients(
             names |= all_names(r)
         return (0.0, {}, names)
 
+    def nonlinear_or_const(node: Any, reps: list[Any]) -> Any:
+        # A nonlinear construct (transcendental, power, opaque, ...) collapses its
+        # variables to nonlinear — UNLESS every sub-result is variable-free, in
+        # which case the whole node is a pure constant and must contribute its
+        # *exact* value, not be dropped to 0.0 (e.g. sin(2) = 0.909..., which the
+        # IA1 integrality check on the constant term depends on).  A variable-free
+        # node that cannot be evaluated exactly yields None, declining the whole
+        # extraction rather than inventing a constant.
+        if any(r is None for r in reps):
+            return None
+        if all(not r[1] and not r[2] for r in reps):
+            from discopt.aggregation.recovery import evaluate_expression
+
+            try:
+                return (float(np.asarray(evaluate_expression(node, {}))), {}, set())
+            except Exception:  # noqa: BLE001 - unevaluable variable-free node: decline
+                return None
+        return collapse_nonlinear(*reps)
+
     def _analyze(node: Any) -> Any:
         if isinstance(node, Variable):
             name = node.name
@@ -361,7 +380,7 @@ def affine_coefficients(
                     const, coeffs, nonlin = inner
                     return (-const, {n: -c for n, c in coeffs.items()}, set(nonlin))
                 return inner
-            return collapse_nonlinear(inner)  # abs / sin / exp / ...
+            return nonlinear_or_const(node, [inner])  # abs / sin / exp / ...
         if isinstance(node, BinaryOp):
             left = analyze(node.left)
             right = analyze(node.right)
@@ -375,7 +394,7 @@ def affine_coefficients(
             if op == "/":
                 return _div(node.right, left, right)
             # power or any other binary op over variable operands -> nonlinear
-            return collapse_nonlinear(left, right)
+            return nonlinear_or_const(node, [left, right])
         if isinstance(node, SumExpression):
             # See classify_linearity: a sum only preserves affine coefficients
             # when its operand is provably scalar (identity sum).  Over an array
@@ -388,17 +407,17 @@ def affine_coefficients(
             return inner if _provably_scalar(node.operand) else collapse_nonlinear(inner)
         if isinstance(node, SumOverExpression):
             reps = [analyze(t) for t in node.terms]
-            return collapse_nonlinear(*reps)
+            return nonlinear_or_const(node, reps)
         if isinstance(node, FunctionCall):
             reps = [analyze(a) for a in node.args]
-            return collapse_nonlinear(*reps)
+            return nonlinear_or_const(node, reps)
         # CustomCall / MatMulExpression / unrecognised: every reachable variable
         # nonlinear; a genuinely unwalkable node yields the outer None.
         kids = child_exprs(node)
         if kids is None:
             return None
         reps = [analyze(k) for k in kids]
-        return collapse_nonlinear(*reps)
+        return nonlinear_or_const(node, reps)
 
     def _merge_add(left: Any, right: Any, sign: float) -> Any:
         lconst, lcoeffs, lnonlin = left

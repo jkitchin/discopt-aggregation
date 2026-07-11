@@ -130,6 +130,33 @@ def test_reject_fractional_constant():
     assert inc.constraint_linear_vars(cid) == set()
 
 
+def test_reject_variable_free_nonintegral_nonlinear_constant():
+    """RC4: ``y = i + sin(2)`` — the variable-free nonlinear term sin(2) = 0.909 is
+    a non-integral constant, so no integer candidate is admissible.  Previously the
+    constant was dropped to 0.0 (integral) and the edge was wrongly admitted."""
+
+    def build(m):
+        m.integer("y", lb=-20, ub=20)
+        m.integer("i", lb=0, ub=10)
+        m.subject_to(m._variables[0] - (m._variables[1] + dm.sin(2)) == 0.0)
+
+    inc, cid = _single_constraint_incidence(build, integer_aggregation=True)
+    assert inc.constraint_linear_vars(cid) == set()
+
+
+def test_admit_variable_free_integral_nonlinear_constant():
+    """RC4 boundary: ``y = i + cos(0)`` — cos(0) = 1 is integral, so the exact
+    constant still admits the integer edge (the fix must not over-reject)."""
+
+    def build(m):
+        m.integer("y", lb=-20, ub=20)
+        m.integer("i", lb=0, ub=10)
+        m.subject_to(m._variables[0] - (m._variables[1] + dm.cos(0)) == 0.0)
+
+    inc, cid = _single_constraint_incidence(build, integer_aggregation=True)
+    assert inc.constraint_linear_vars(cid) != set()
+
+
 def test_reject_fractional_coefficient():
     """``y = 0.5*i + z``: a non-integral coefficient rejects every integer candidate."""
 

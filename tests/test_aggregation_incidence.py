@@ -292,6 +292,21 @@ def test_affine_coefficients_constant_term_and_signs():
     assert coeffs["y"] == pytest.approx(2.0)
 
 
+def test_variable_free_nonlinear_constant_is_exact():
+    """RC4: a variable-free nonlinear subtree (sin(2)) contributes its exact value
+    to the constant term, not 0.0.  Dropping it silently made an all-integer body
+    look like it had an integral constant when it did not."""
+    from discopt.aggregation.exprwalk import affine_coefficients
+
+    m = dm.Model("vf")
+    x = m.continuous("x")
+    import math
+
+    const, coeffs = affine_coefficients(x + dm.sin(2))
+    assert const == pytest.approx(math.sin(2))
+    assert coeffs["x"] == pytest.approx(1.0)
+
+
 def test_sum_over_scalar_operand_stays_affine():
     """A ``sum`` whose operand is provably scalar is the identity: coefficients
     pass through unchanged (regression guard for the RC1 decline not over-firing)."""
