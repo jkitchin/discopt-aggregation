@@ -93,7 +93,8 @@ Run this *before* eliminating to understand a model's structure:
 ```python
 from discopt.aggregation import structural_diagnosis
 d = structural_diagnosis(m)
-d.free_variables               # structurally under-determined
+d.free_variables               # degrees of freedom (unmatched under-determined vars)
+d.degrees_of_freedom           # DOF count (under-determined excess)
 d.overdetermined_constraints   # structurally over-determined
 d.is_structurally_singular     # bool
 for w in d.warnings():

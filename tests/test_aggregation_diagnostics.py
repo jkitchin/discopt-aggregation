@@ -65,6 +65,18 @@ def test_underdetermined_system_has_free_variables():
     assert len(d.dm.underdetermined[1]) - len(d.dm.underdetermined[0]) == 1
 
 
+def test_free_variables_reports_only_the_degrees_of_freedom():
+    """RC8: free_variables returns the *unmatched* under-determined variables (the
+    actual DOF), not every variable in the under-determined block.  ``x + y == 1``
+    has one degree of freedom, so free_variables has length 1 (which specific
+    variable is matching-dependent but deterministic), and degrees_of_freedom is 1.
+    """
+    d = structural_diagnosis(_under())
+    assert len(d.free_variables) == 1
+    assert set(d.free_variables) <= {"x", "y"}
+    assert d.degrees_of_freedom == 1
+
+
 def test_overdetermined_system_flags_singular():
     d = structural_diagnosis(_over())
     assert d.is_structurally_singular

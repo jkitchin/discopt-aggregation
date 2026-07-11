@@ -20,7 +20,7 @@ incidence graph and a maximum matching.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from discopt.aggregation.incidence import build_incidence
@@ -45,11 +45,30 @@ class StructuralDiagnosis:
     dm: DulmageMendelsohn
     n_equality_constraints: int
     n_variables: int
+    matching: dict = field(default_factory=dict)
 
     @property
     def free_variables(self) -> list[str]:
-        """Variables with no defining equality (the model's degrees of freedom)."""
-        return list(self.dm.underdetermined[1])
+        """The model's degrees of freedom: under-determined variables with no
+        defining equality — i.e. the *unmatched* variables of the
+        under-determined block, NOT every variable in it.
+
+        The under-determined block also contains matched variables (each pinned by
+        a defining equality *inside* the block); only the unmatched excess are
+        genuine degrees of freedom.  For ``x + y == 1`` (one equality, two
+        variables) this returns a single free variable, matching the one degree of
+        freedom, rather than both variables.  The matching is deterministic
+        (sorted iteration), so the returned set is stable across hash seeds.
+        """
+        matched = set(self.matching.values())
+        return [v for v in self.dm.underdetermined[1] if v not in matched]
+
+    @property
+    def degrees_of_freedom(self) -> int:
+        """Number of degrees of freedom: the under-determined block's excess of
+        variables over equality constraints (well-defined regardless of which
+        maximum matching was chosen)."""
+        return len(self.dm.underdetermined[1]) - len(self.dm.underdetermined[0])
 
     @property
     def overdetermined_constraints(self) -> list[int]:
@@ -90,6 +109,7 @@ def structural_diagnosis(model: Any, pivot_tol: float = 1e-6) -> StructuralDiagn
         dm=dm,
         n_equality_constraints=len(inc.constraints),
         n_variables=len(inc.variables),
+        matching=matching,
     )
 
 
