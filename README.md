@@ -1,5 +1,7 @@
 # discopt-aggregation
 
+[![CI](https://github.com/jkitchin/discopt-aggregation/actions/workflows/ci.yml/badge.svg)](https://github.com/jkitchin/discopt-aggregation/actions/workflows/ci.yml)
+
 Variable aggregation (reduced-space presolve) for nonlinear optimization —
 a standalone **plugin for [discopt](https://github.com/jkitchin/discopt)** that
 installs into the `discopt.aggregation` namespace.
