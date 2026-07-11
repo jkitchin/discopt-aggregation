@@ -12,10 +12,14 @@ import subprocess
 import sys
 
 _SNIPPET = r"""
+import pytest
+
 import discopt.modeling as dm
 from discopt.aggregation.api import aggregate
 from discopt.aggregation.schur import kkt_schur_indices
 from discopt.aggregation.ordering import block_triangular_ordering
+
+pytestmark = pytest.mark.unit
 
 def model():
     m = dm.Model("d")

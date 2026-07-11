@@ -43,6 +43,8 @@ from discopt.aggregation.implicit import eliminate_implicit
 from discopt.aggregation.recovery import evaluate_expression
 from discopt.aggregation.testproblems import PROBLEMS, RECYCLE_CYCLE, recycle_cycle
 
+pytestmark = pytest.mark.unit
+
 RL2_CAP = 9  # full space needs ~10 Newton iters on this cycle; 9 caps the harder cells
 
 
@@ -135,6 +137,7 @@ def test_explicit_d2_on_closed_recycle_is_sound_but_not_more_reliable():
     assert it_red >= it_full
 
 
+@pytest.mark.smoke
 @pytest.mark.slow
 def test_rl2_honest_negative_grid(_points: int = 7):
     """The full RL2 grid sweep: the only convergence gap is unsound (deterministic).

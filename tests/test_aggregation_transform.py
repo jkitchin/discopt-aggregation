@@ -197,6 +197,7 @@ def test_fixed_variable_adds_no_bound_inequalities():
     assert rm.n_bound_inequalities == 0  # constant definition: no kept-var bound
 
 
+@pytest.mark.smoke
 def test_infeasible_fixed_bound_detected():
     """C1: a fixed variable whose value violates its box marks infeasibility.
 
@@ -227,6 +228,7 @@ def test_infeasible_fixed_bound_detected():
     assert res.status == "infeasible"
 
 
+@pytest.mark.smoke
 def test_fixed_variable_within_box_stays_feasible():
     """C1 boundary: a fixed value inside the box is not flagged."""
     from discopt.aggregation.api import aggregate, solve

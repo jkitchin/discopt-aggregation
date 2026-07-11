@@ -43,6 +43,7 @@ def test_build_scaling_returns_row_per_size():
     assert rows[1]["n_eliminated"] == 100
 
 
+@pytest.mark.smoke
 def test_scaling_model_roundtrips():
     # aggregate + solve recovers the eliminated intermediates correctly. The
     # recovered point reassembles the scalarized arrays back to their array names.

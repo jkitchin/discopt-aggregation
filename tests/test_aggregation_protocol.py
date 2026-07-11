@@ -12,6 +12,8 @@ import pytest
 from discopt.aggregation.benchmark import callback_breakdown
 from discopt.aggregation.testproblems import reaction_diffusion
 
+pytestmark = pytest.mark.unit
+
 
 def test_callback_breakdown_well_formed():
     """P3: the per-callback cost breakdown is well-formed for every method.

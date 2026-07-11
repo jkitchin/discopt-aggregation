@@ -38,6 +38,7 @@ def test_max_fill_with_lm_and_recursive():
     assert capped.n_eliminated <= base.n_eliminated
 
 
+@pytest.mark.smoke
 def test_all_three_guards_together_stay_sound():
     """max_fill + max_def_nodes + max_condition applied at once stays sound."""
     agg = aggregate(
@@ -66,6 +67,7 @@ def test_exact_tearing_with_guards():
     assert agg.n_eliminated >= 1
 
 
+@pytest.mark.smoke
 def test_integer_array_survives_scalarization_and_solves():
     """An integer array is rebuilt un-scalarized; the model still aggregates+solves."""
     m = dm.Model("intarr")
@@ -117,6 +119,7 @@ def test_objectiveless_model_structure_and_aggregate():
     assert "y" in agg.eliminated or agg.n_eliminated == 0
 
 
+@pytest.mark.smoke
 def test_fully_determined_sweep_instance():
     """sweep's fully-determined branch: every variable eliminated by aggregation."""
     from discopt.aggregation.recovery import evaluate_expression

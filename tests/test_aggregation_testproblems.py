@@ -110,6 +110,7 @@ def test_nonconvex_pipeline_roundtrip():
     assert res.objective == pytest.approx(original.objective, abs=1e-4)
 
 
+@pytest.mark.smoke
 def test_cstr_dynamic_dae_problem():
     """P4: the discretized-DAE control problem round-trips and aggregates well."""
     from discopt.aggregation.api import aggregate

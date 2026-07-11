@@ -55,6 +55,7 @@ def _chain():
     return m
 
 
+@pytest.mark.smoke
 def test_nonsingular_cycle_extracted_and_solves():
     blocks = implicit_blocks(_nonsingular_cycle())
     assert len(blocks) == 1
@@ -72,6 +73,7 @@ def test_chain_has_no_cyclic_blocks():
     assert implicit_blocks(_chain()) == []
 
 
+@pytest.mark.smoke
 def test_singular_cycle_extracted_but_does_not_solve():
     blocks = implicit_blocks(_singular_cycle())
     assert len(blocks) == 1

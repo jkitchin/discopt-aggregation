@@ -53,6 +53,7 @@ def test_structural_only_characterizes_aggressive_methods_cheaply():
     assert rows["gr"].n_variables < rows["original"].n_variables
 
 
+@pytest.mark.smoke
 @pytest.mark.unit
 def test_local_solve_max_iter_cap_reports_not_converged():
     """RL1: an iteration cap turns a converging solve into a not-converged one.
@@ -72,6 +73,7 @@ def test_local_solve_max_iter_cap_reports_not_converged():
     assert capped_iters == 3  # clamped to the cap
 
 
+@pytest.mark.smoke
 @pytest.mark.unit
 def test_local_solve_options_none_is_byte_identical_default():
     """RL1: ``options=None`` reproduces the uncapped solve exactly.

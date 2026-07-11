@@ -21,6 +21,8 @@ from discopt.aggregation.api import aggregate, solve
 from discopt.aggregation.incidence import build_incidence
 from discopt.aggregation.testproblems import PROBLEMS
 
+pytestmark = pytest.mark.unit
+
 
 def _single_constraint_incidence(build, integer_aggregation):
     """Build a one-equality model with ``build(m)`` and return (inc, cid)."""
@@ -253,6 +255,7 @@ def test_flag_does_not_change_continuous_corpus():
             assert off == on, f"{name}/{method}: flag changed eliminated list"
 
 
+@pytest.mark.smoke
 def test_solve_accepts_integer_aggregation_kwarg():
     """T1 parity: solve() exposes the integer_aggregation knob."""
     import inspect
@@ -275,6 +278,7 @@ def _fixed_integer_model(name, const):
     return m
 
 
+@pytest.mark.smoke
 def test_fixed_integer_eliminated_and_integral():
     """IA2: ``i == 3`` (integer) is eliminated, feasible, and recovers exactly 3."""
     from discopt.aggregation.api import solve
@@ -288,6 +292,7 @@ def test_fixed_integer_eliminated_and_integral():
     assert res.x["i"] == 3
 
 
+@pytest.mark.smoke
 def test_fixed_integer_fractional_is_infeasible():
     """IA2: ``i == 2.5`` (integer) is integral-infeasible with the flag on.
 
@@ -310,6 +315,7 @@ def test_fixed_integer_fractional_is_infeasible():
     assert res.status == "infeasible"
 
 
+@pytest.mark.smoke
 def test_fixed_integer_fractional_all_eliminated_reports_infeasible():
     """RC5: when a non-integral integer fix eliminates *every* variable, solve()
     must report infeasible, not crash.  The infeasible early-return previously
@@ -327,6 +333,7 @@ def test_fixed_integer_fractional_all_eliminated_reports_infeasible():
     assert res.x == {}  # nothing feasible to recover on the infeasible branch
 
 
+@pytest.mark.smoke
 def test_partial_elimination_nonintegral_integer_reports_infeasible():
     """RC5 variant: a non-integral integer fix alongside a surviving variable is
     reported infeasible without crashing."""
@@ -590,6 +597,7 @@ def test_recovery_raises_on_nonintegral_integer(monkeypatch):
         rec.recover({})
 
 
+@pytest.mark.smoke
 def test_duals_unavailable_when_integer_eliminated():
     """IA4: dual recovery declines (with a reason) if an integer was aggregated."""
     res = solve(_ia4_model(), method="gr", integer_aggregation=True, recover_duals=True)
@@ -601,6 +609,7 @@ def test_duals_unavailable_when_integer_eliminated():
 # --------------------------------------------------------------------------- #
 # IA5 — MINLP validation problem + no-regression corpus                        #
 # --------------------------------------------------------------------------- #
+@pytest.mark.smoke
 def test_inventory_chain_roundtrips_with_integer_aggregation():
     """IA5: the integer stock chain aggregates and round-trips exactly (MINLP)."""
     from discopt.aggregation.testproblems import inventory_chain

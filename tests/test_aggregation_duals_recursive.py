@@ -44,6 +44,7 @@ def _convex_recursive_model():
     return m
 
 
+@pytest.mark.smoke
 def test_recursive_recovery_satisfies_kkt():
     result = aggregate(_convex_recursive_model(), method="d2")
     assert result.n_passes >= 2  # genuinely recursive (ld1 cascade + d2)
@@ -54,6 +55,7 @@ def test_recursive_recovery_satisfies_kkt():
     assert resid < 1e-6
 
 
+@pytest.mark.smoke
 def test_recursive_recovery_matches_original_duals():
     m = _convex_recursive_model()
     result = aggregate(m, method="d2")
@@ -65,6 +67,7 @@ def test_recursive_recovery_matches_original_duals():
         assert mu == pytest.approx(want, abs=1e-5)
 
 
+@pytest.mark.smoke
 @pytest.mark.parametrize("method", ["d2", "gr", "lm"])
 def test_recovery_is_method_independent(method):
     result = aggregate(_convex_recursive_model(), method=method)
@@ -79,6 +82,7 @@ def test_recovery_is_method_independent(method):
         assert mu == pytest.approx(want, abs=1e-5)
 
 
+@pytest.mark.smoke
 def test_solve_surfaces_duals_only_when_requested():
     plain = solve(_convex_recursive_model(), method="d2")
     assert plain.duals is None
@@ -101,6 +105,7 @@ def test_result_carries_dual_recovery_bookkeeping():
     assert all(0 <= p < result.n_passes for _v, _c, p in result.elim_records)
 
 
+@pytest.mark.smoke
 def test_maximize_recovers_duals():
     """DU1: the recursive path recovers maximise duals in discopt's convention.
 
@@ -130,6 +135,7 @@ def test_maximize_recovers_duals():
         assert mu == pytest.approx(want, abs=1e-6)
 
 
+@pytest.mark.smoke
 def test_cross_pass_coupling_recovered_by_linear_solve():
     """C7-A: recursive passes whose defining bodies couple are solved correctly.
 
@@ -155,6 +161,7 @@ def test_cross_pass_coupling_recovered_by_linear_solve():
     assert resid < 1e-6
 
 
+@pytest.mark.smoke
 def test_active_eliminated_bound_gamma_recovered():
     """DU2: an active bound on an eliminated variable is recovered via its γ-term.
 
@@ -183,6 +190,7 @@ def test_active_eliminated_bound_gamma_recovered():
     assert resid < 1e-6
 
 
+@pytest.mark.smoke
 def test_interior_eliminated_bound_recovers_identically():
     """DU2: an inactive-but-surviving eliminated bound recovers with γ ≈ 0.
 
@@ -221,6 +229,7 @@ def test_interior_eliminated_bound_recovers_identically():
         assert slack.duals.constraint_duals[cid] == pytest.approx(mu, abs=1e-5)
 
 
+@pytest.mark.smoke
 def test_active_eliminated_bound_property():
     """DU2 property: mixed active/inactive eliminated bounds all self-check.
 
@@ -252,6 +261,7 @@ def test_active_eliminated_bound_property():
     assert n_active >= 1 and n_interior >= 1
 
 
+@pytest.mark.smoke
 def test_available_recoveries_pass_self_check():
     """C7-C: any available=True recovery certifiably satisfies KKT stationarity."""
     res = solve(_convex_recursive_model(), method="d2", recover_duals=True)

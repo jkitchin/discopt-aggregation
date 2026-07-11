@@ -422,6 +422,7 @@ def test_affine_coefficients_matches_oracle_on_problem_corpus():
     assert mismatches == 0, f"{mismatches}/{checks} oracle mismatches"
 
 
+@pytest.mark.smoke
 def test_aggregate_roundtrip_correctness_after_extractor_swap():
     """End-to-end: the extractor swap preserves elimination correctness.
 

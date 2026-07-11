@@ -95,6 +95,7 @@ def test_max_condition_drops_ill_conditioned_elimination():
     assert capped.n_eliminated < uncapped.n_eliminated
 
 
+@pytest.mark.smoke
 def test_capped_aggregation_still_round_trips():
     # dropping eliminations stays lower-triangular; the capped solve is correct.
     def build():

@@ -20,6 +20,7 @@ def _bodies(*constraints):
     return [c.body for c in constraints]
 
 
+@pytest.mark.smoke
 def test_solve_linear_2x2_matches_closed_form():
     # x = 0.5y + 1, y = 0.5x + 2  ->  x = 8/3, y = 10/3
     m = dm.Model("lin2")
@@ -34,6 +35,7 @@ def test_solve_linear_2x2_matches_closed_form():
     assert sol["y"] == pytest.approx(10 / 3, abs=1e-9)
 
 
+@pytest.mark.smoke
 def test_solve_nonlinear_cycle_residual_zero():
     # x = 0.3*y^2 + 0.1, y = 0.2*x + 0.5  (contraction near 0; unique local root)
     m = dm.Model("nl")
@@ -49,6 +51,7 @@ def test_solve_nonlinear_cycle_residual_zero():
     assert np.linalg.norm(r, np.inf) < 1e-8
 
 
+@pytest.mark.smoke
 def test_singular_block_returns_none():
     m = dm.Model("sing")
     x = m.continuous("x", lb=-5, ub=5)
@@ -70,6 +73,7 @@ def test_nonsingular_predicate():
     assert block.is_nonsingular({}, {"x": 0.0, "y": 0.0}) is True
 
 
+@pytest.mark.smoke
 def test_implicit_derivative_matches_finite_difference():
     # x = 0.5y + u, y = 0.5x + 2 ; parameter u (kept). dx/du = 4/3, dy/du = 2/3.
     m = dm.Model("impl")

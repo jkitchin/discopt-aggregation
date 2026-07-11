@@ -387,6 +387,7 @@ def test_degree_filter_counts_noncandidate_variables():
     assert aggregate(m2, method="d2", recursive=False).eliminated == ["a"]
 
 
+@pytest.mark.smoke
 def test_fill_aware_order_shrinks_expression_without_losing_eliminations():
     """R1: order='min_fill' cuts substitution fan-out, keeping the eliminations.
 

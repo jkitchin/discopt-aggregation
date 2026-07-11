@@ -31,6 +31,7 @@ def _cyclic_model():
     return m
 
 
+@pytest.mark.smoke
 def test_eliminate_implicit_reduces_and_solves_same():
     _s, _i, _w, direct_obj = _local_solve(_cyclic_model())
     el = eliminate_implicit(_cyclic_model())
@@ -89,6 +90,7 @@ def test_nonlinear_cyclic_block_round_trips():
     assert full["y"] == pytest.approx(0.2 * full["x"] ** 2 + 1.0, abs=1e-5)
 
 
+@pytest.mark.smoke
 def test_block_bounds_enforced():
     """C4: eliminated block variables' bounds are re-expressed on the node.
 
@@ -118,6 +120,7 @@ def test_within_bounds_block_still_solves():
     assert full["y"] == pytest.approx(14 / 3, abs=1e-4)
 
 
+@pytest.mark.smoke
 def test_maximize_cyclic_block_round_trips():
     """T4: eliminate_implicit's maximize objective rebuild path."""
     m = dm.Model("maxk1")
