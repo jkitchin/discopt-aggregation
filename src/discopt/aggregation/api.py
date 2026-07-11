@@ -199,6 +199,7 @@ def aggregate(
     origin_maps: list[list] = []
     elim_records: list[tuple[str, int, int]] = []
     infeasible_eliminations: list[tuple[str, float, float, float]] = []
+    tearing_fallbacks = 0  # N2: exact-tear MILP failures that fell back to greedy
 
     for stage in pipeline:
         while True:
@@ -212,6 +213,7 @@ def aggregate(
                 integer_aggregation=integer_aggregation,
             )
             agg = resolve_strategy(stage)(inc)
+            tearing_fallbacks += agg.stats.get("tearing_fallbacks", 0)
             if preserve_target_linearity:
                 agg = drop_linearity_breaking(agg)
             if max_def_nodes is not None or max_condition is not None:
@@ -265,7 +267,11 @@ def aggregate(
         method=key,
         n_passes=len(order_stack),
         original_model=user_model,
-        stats={"n_eliminated": len(eliminated), "n_passes": len(order_stack)},
+        stats={
+            "n_eliminated": len(eliminated),
+            "n_passes": len(order_stack),
+            "tearing_fallbacks": tearing_fallbacks,
+        },
         scalarization=scal_map,
         base_model=model,
         origin_maps=origin_maps,

@@ -373,6 +373,12 @@ are independent of the upstream work and can proceed now.
 - **`tests/test_packaging.py`** — version consistency + full `__all__` import
   sanity (74 exports).
 
+> **Correction note (2026-07-11, 0.4.1 review).** The two figures above drifted
+> as later phases landed: the package now exports **83** names (`__all__`) and
+> the suite is **473 collected** tests (471 run, 2 slow deselected). The "342
+> tests" / "23 modules" figures in the Final-status block below are likewise the
+> 0.3.0-era snapshot; treat this note as authoritative for current counts.
+
 ---
 
 ## Final status — parity plan complete

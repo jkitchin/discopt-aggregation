@@ -95,8 +95,10 @@ for s in 0 5 7; do PYTHONHASHSEED=$s python -c "from discopt.aggregation import 
 
 ## MINLP: binaries/integers
 
-Never eliminated by any method. If you need an integer relationship substituted,
-that's out of scope — aggregation targets scalar continuous variables only.
+Not eliminated by default — aggregation targets scalar continuous variables
+unless you opt in. Pass `integer_aggregation=True` to also eliminate a scalar
+integer/binary variable when its integrality is *implied* (the conditions below);
+otherwise integer/binary variables are left untouched.
 
 
 ## An integer variable is not eliminated

@@ -338,6 +338,24 @@ def test_exact_tear_falls_back_to_greedy_on_nonoptimal_milp(monkeypatch):
     # must not raise; greedy fallback yields a valid (lower-triangular) result
     agg = aggregate(m, method="lm", tearing="exact")
     assert agg.n_eliminated >= 1
+    # N2/RD3: the fallback is recorded on the aggregation stats
+    assert agg.stats["tearing_fallbacks"] >= 1
+
+
+def test_tearing_fallbacks_is_zero_on_the_normal_path():
+    """RD3: with no MILP failure the tearing_fallbacks counter stays 0."""
+    import discopt.modeling as dm
+
+    from discopt.aggregation.api import aggregate
+
+    m = dm.Model("nofallback")
+    x = m.continuous("x", lb=-9, ub=9)
+    y = m.continuous("y", lb=-9, ub=9)
+    m.subject_to(x - (0.5 * y + 1) == 0.0)
+    m.subject_to(y - (0.5 * x + 2) == 0.0)
+    m.minimize(x**2 + y**2)
+    agg = aggregate(m, method="lm", tearing="exact")
+    assert agg.stats["tearing_fallbacks"] == 0
 
 
 def test_degree_filter_counts_noncandidate_variables():

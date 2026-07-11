@@ -65,13 +65,16 @@ methods for sweeps; `gr`/`lm` reduced models can be slow/blow-up (guard with
 `PROBLEMS` maps names to `TestProblem` (builder + nominal params + sweep ranges):
 - `reaction_diffusion` — 1-D diffusion-reaction least-squares collocation
   (convex QP / NLP).
-- `unit_selection` — on/off units with quadratic cost (MIQP / MINLP; binaries
-  never aggregated).
+- `unit_selection` — on/off units with quadratic cost (MIQP / MINLP; the on/off
+  binaries appear only in inequalities, so they are not aggregation candidates).
 - `gas_pipeline` — Weymouth gas line (nonconvex NLP).
 - `recycle_loop` — torn steady-state recycle (parallel units; aggregation
   collapses the loop).
 - `cstr_dynamic` — time-discretized CSTR optimal control with rational kinetics
   (discretized-DAE; `d2` eliminates the algebraic rate variables ~42%).
+- `inventory_chain` — all-integer multi-period stock balance
+  (`s[t] = s[t-1] + q[t] - d[t]`); the IA5 MINLP validation problem for
+  `integer_aggregation=True`.
 
 `recycle_cycle` / `RECYCLE_CYCLE` is a **closed** recycle loop used as the RL2
 reliability probe. It is exported but **not** in `PROBLEMS`: a bounded search for a
@@ -91,7 +94,7 @@ m = p.build(n=8, k=1.0, c_in=1.0)      # nominal or overridden
 grid = p.sweep_grid(points=11)         # 121 parameter dicts
 ```
 
-## 30 in-tree worked examples
+## In-tree worked examples
 
 ```bash
 python -m discopt.aggregation.examples    # runs every feature end to end, prints output

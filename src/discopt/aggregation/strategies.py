@@ -290,7 +290,7 @@ def _max_acyclic_subset(nodes: list[str], deps: dict[str, set[str]]) -> set[str]
     return set()
 
 
-def _exact_tear(inc: IncidenceModel, block: list[tuple[int, str]]) -> dict[int, str]:
+def _exact_tear(inc: IncidenceModel, block: list[tuple[int, str]]) -> tuple[dict[int, str], bool]:
     """Maximum lower-triangular sub-matching of a cyclic block (exact tearing).
 
     Blocks up to :data:`_EXACT_TEAR_CAP` variables use the brute-force maximum
@@ -298,6 +298,10 @@ def _exact_tear(inc: IncidenceModel, block: list[tuple[int, str]]) -> dict[int, 
     (:func:`~discopt.aggregation.tearing.max_acyclic_subset_milp`, S2), which is
     also exact but scales.  Any MILP failure falls back to the greedy tear, so the
     result is never worse than greedy.
+
+    Returns ``(sub_matching, fell_back)`` where ``fell_back`` is ``True`` iff the
+    MILP failed and the greedy tear was used instead (surfaced as the
+    ``tearing_fallbacks`` stat, N2).
     """
     block_vars = [var for _cid, var in block]
     cid_of = {var: cid for cid, var in block}
@@ -311,8 +315,8 @@ def _exact_tear(inc: IncidenceModel, block: list[tuple[int, str]]) -> dict[int, 
 
             keep = max_acyclic_subset_milp(block_vars, deps)
         except Exception:  # non-optimal MILP or solver error: never degrade
-            return _greedy(inc, [cid for cid, _ in block], restrict=var_set)
-    return {cid_of[v]: v for v in keep}
+            return _greedy(inc, [cid for cid, _ in block], restrict=var_set), True
+    return {cid_of[v]: v for v in keep}, False
 
 
 def _n_block(matching: dict[int, str], inc: IncidenceModel) -> int:
@@ -388,12 +392,15 @@ def linear_matching_aggregation_set(
 
     blocks = block_triangularize(m_linear, inc.graph.adj_left)
     m_reduced: dict[int, str] = {}
+    tearing_fallbacks = 0
     for block in blocks:
         if len(block) == 1:
             cid, var = block[0]
             m_reduced[cid] = var
         elif getattr(inc, "tearing", "greedy") == "exact":
-            m_reduced.update(_exact_tear(inc, block))
+            tear, fell_back = _exact_tear(inc, block)
+            m_reduced.update(tear)
+            tearing_fallbacks += int(fell_back)
         else:
             # Algorithm 2 step 6b: greedy on the block's induced subgraph, so it
             # cannot match a variable belonging to another block.
@@ -405,6 +412,7 @@ def linear_matching_aggregation_set(
         "n_match": len(m_linear),
         "n_block": len(blocks),
         "n_agg": result.n,
+        "tearing_fallbacks": tearing_fallbacks,
     }
     # Theorem 2 chain n_block <= n_agg <= n_match holds for the algorithmic
     # matching (before any max_fill / guard drops in _finalize reduce n_agg).

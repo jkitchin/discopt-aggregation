@@ -39,12 +39,18 @@ def install(target_dir: Path, *, force: bool) -> Path:
             "Reinstall discopt-aggregation, or run from a wheel that includes the skill."
         )
     dest = target_dir / _SKILL_NAME
-    if dest.exists():
+    # is_symlink() catches a symlinked destination (e.g. the in-repo skill link),
+    # including a *broken* one, which dest.exists() misses; rmtree would raise
+    # OSError on a symlink, so unlink links and files, rmtree only real dirs.
+    if dest.is_symlink() or dest.exists():
         if not force:
             raise FileExistsError(
                 f"{dest} already exists; pass --force to overwrite, or remove it first."
             )
-        shutil.rmtree(dest)
+        if dest.is_symlink() or dest.is_file():
+            dest.unlink()
+        else:
+            shutil.rmtree(dest)
     dest.parent.mkdir(parents=True, exist_ok=True)
     # copy only the skill content (SKILL.md, README, references/, examples/)
     shutil.copytree(src, dest, ignore=shutil.ignore_patterns("__pycache__"))

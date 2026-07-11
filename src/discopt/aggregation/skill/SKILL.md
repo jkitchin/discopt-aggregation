@@ -75,8 +75,10 @@ lm    linear-matching  y = f(w,x,…) (y linear)       approximate-maximum
 ```
 `ld1`/`ecd2`/`ld2`/`d2`/`d<k>` run fixed-variable elimination first, then the
 degree-bounded pass, recursively to a fixed point. `gr`/`lm` are applied once.
-Integer/binary variables are **never** eliminated. Full decision guidance:
-`references/methods.md`.
+Integer/binary variables are **not eliminated by default**; opt in with
+`integer_aggregation=True` to also eliminate a scalar integer/binary variable
+when its integrality is *implied* (see the `integer_aggregation` row below and
+`references/troubleshooting.md`). Full decision guidance: `references/methods.md`.
 
 ## Options reference (when to use each)
 
@@ -157,7 +159,7 @@ implicit (see below).
   `sweep_to_csv(...)` → convergence-reliability grids (Figs 9–12, Table 7).
 - `PROBLEMS` registry of parameterized test problems
   (`reaction_diffusion`, `unit_selection`, `gas_pipeline`, `recycle_loop`,
-  `cstr_dynamic`).
+  `cstr_dynamic`, `inventory_chain`).
 Details and the local-vs-global-solve caveat: `references/study-tools.md`.
 
 ## Task routing
@@ -171,7 +173,8 @@ Details and the local-vs-global-solve caveat: `references/study-tools.md`.
 - **Reproducing the paper's structural/runtime/reliability study** →
   `references/study-tools.md`
 - **Runnable end-to-end scripts** → `examples/` (and
-  `python -m discopt.aggregation.examples` for 30 in-tree worked examples)
+  `python -m discopt.aggregation.examples` for the in-tree worked examples,
+  one per feature)
 
 ## Installation / sanity check
 
