@@ -297,7 +297,16 @@ def recover_duals(reduced: Any, reduced_result: Any) -> DualRecovery:
 
     rx = getattr(reduced_result, "x", None)
     rduals = getattr(reduced_result, "constraint_duals", None)
-    if not isinstance(rx, dict) or not isinstance(rduals, dict):
+    if not isinstance(rx, dict):
+        return DualRecovery(available=False, reason="missing_reduced_duals")
+    # A reduced model with no surviving constraints (a single defining equality,
+    # interior solution) solves with constraint_duals=None — there are no
+    # surviving-constraint multipliers.  That is not missing data: the defining
+    # multipliers follow from stationarity alone (_finalize_duals), so treat it as
+    # an empty dual map and proceed.
+    if rduals is None and len(reduced.model._constraints) == 0:
+        rduals = {}
+    if not isinstance(rduals, dict):
         return DualRecovery(available=False, reason="missing_reduced_duals")
 
     full_x = reduced.recovery.recover_full(rx)
@@ -365,7 +374,14 @@ def recover_duals_from_result(result: Any, reduced_result: Any) -> DualRecovery:
 
     rx = getattr(reduced_result, "x", None)
     rduals = getattr(reduced_result, "constraint_duals", None)
-    if not isinstance(rx, dict) or not isinstance(rduals, dict):
+    if not isinstance(rx, dict):
+        return DualRecovery(available=False, reason="missing_reduced_duals")
+    # A constraint-free reduced model solves with constraint_duals=None; that is
+    # not missing data (the defining multipliers come from stationarity), so treat
+    # it as an empty dual map and proceed.
+    if rduals is None and len(result.reduced_model._constraints) == 0:
+        rduals = {}
+    if not isinstance(rduals, dict):
         return DualRecovery(available=False, reason="missing_reduced_duals")
 
     # Full-space point in the base (scalar) space — not reassembled into arrays.

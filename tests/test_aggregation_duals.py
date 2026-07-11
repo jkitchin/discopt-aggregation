@@ -142,3 +142,47 @@ def test_active_eliminated_bound_gamma_single_pass():
     assert dr.constraint_duals[0] == pytest.approx(-2.53553389, abs=1e-4)
     res = kkt_stationarity_residual(m, dr.full_x, dr.constraint_duals, dr.bound_duals)
     assert res < 1e-6, f"KKT residual {res}"
+
+
+@pytest.mark.parametrize("sense", ["min", "max"])
+def test_constraint_free_reduced_model_recovers_defining_multiplier(sense):
+    """RC7: eliminating the single defining equality of an unbounded variable
+    leaves a constraint-free reduced model, which solves with
+    constraint_duals=None.  That is not missing data — the defining multiplier
+    follows from stationarity — so recovery must succeed (dual = -1 here: the
+    linear term +y in the objective gives ∂L/∂y = 1 + λ = 0)."""
+    m = dm.Model(f"cfree_{sense}")
+    x = m.continuous("x", lb=-5.0, ub=5.0)
+    y = m.continuous("y")  # unbounded: no box→inequality, so no surviving constraint
+    m.subject_to(y - x**2 == 0.0)
+    if sense == "min":
+        m.minimize((x - 2.0) ** 2 + y)
+    else:
+        m.maximize(-((x - 2.0) ** 2) - y)
+    rm = apply_aggregation(m, aggregation_set(m, method="lm"))
+    assert len(rm.model._constraints) == 0  # genuinely constraint-free
+    rr = rm.model.solve()
+    assert rr.constraint_duals is None  # discopt returns None here
+    dr = recover_duals(rm, rr)
+    assert dr.available, dr.reason
+    assert dr.constraint_duals[0] == pytest.approx(-1.0, abs=1e-4)
+    res = kkt_stationarity_residual(m, dr.full_x, dr.constraint_duals, dr.bound_duals)
+    assert res < 1e-6, f"KKT residual {res}"
+
+
+def test_none_duals_with_surviving_constraints_still_declines():
+    """RC7 boundary: constraint_duals=None while the reduced model DOES have
+    surviving constraints is genuinely missing data — still decline."""
+
+    class _Result:
+        def __init__(self, x):
+            self.x = x
+            self.constraint_duals = None
+
+    m = _eq_model()
+    rm = apply_aggregation(m, aggregation_set(m, method="d2"))
+    assert len(rm.model._constraints) > 0  # this reduced model has constraints
+    solved = rm.model.solve()
+    dr = recover_duals(rm, _Result(dict(solved.x)))
+    assert not dr.available
+    assert dr.reason == "missing_reduced_duals"
