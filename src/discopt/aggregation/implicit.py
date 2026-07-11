@@ -302,7 +302,9 @@ class ImplicitElimination:
         """Full-space point: kept solution + block variables from the inner solves."""
         full = dict(kept_values)
         for block, inputs in zip(self.blocks, self.block_inputs):
-            u = {name: kept_values[name] for name in inputs}
+            # Read inputs from the accumulated point, not just kept_values, so a
+            # block whose input is another block's recovered variable still works.
+            u = {name: full[name] for name in inputs}
             sol = block.solve(u, x0=dict.fromkeys(block.variables, self.x0_value))
             if sol is None:  # pragma: no cover - nonsingular blocks were pre-filtered
                 raise RuntimeError(f"implicit block {block.variables} failed to solve")
@@ -364,6 +366,20 @@ def eliminate_implicit(
         ):
             continue  # only eliminate provably-nonsingular blocks
         contexts.append((block_vars, block_cids, equations, kept_inputs))
+
+    # A block whose equations reference a variable eliminated by ANOTHER block is
+    # coupled to it.  Chaining block substitutions (topological block order) is
+    # out of scope for K1, which eliminates independent blocks; a coupled block's
+    # input would be absent from the reduced model and crash the node build.  So
+    # leave such a block in place — decline it — matching the documented "a block
+    # with an unsupported construct is left in place" contract.  Conservative
+    # single pass: drop any block referencing another candidate block's variable.
+    all_block_vars = {v for ctx in contexts for v in ctx[0]}
+    contexts = [
+        ctx
+        for ctx in contexts
+        if not (set(ctx[3]) & (all_block_vars - set(ctx[0])))  # ctx[3]=inputs, ctx[0]=vars
+    ]
 
     if not contexts:
         raise ValueError("no eliminable nonsingular cyclic block found")

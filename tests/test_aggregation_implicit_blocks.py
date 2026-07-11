@@ -98,3 +98,36 @@ def test_eliminate_implicit_eliminates_the_block():
 def test_eliminate_implicit_raises_when_no_cyclic_block():
     with pytest.raises(ValueError, match="no eliminable"):
         eliminate_implicit(_chain())
+
+
+def _coupled_cyclic_blocks():
+    """Two cyclic blocks where B's equations reference A's variable x1."""
+    m = dm.Model("coupled")
+    x1, x2 = m.continuous("x1"), m.continuous("x2")
+    y1, y2 = m.continuous("y1"), m.continuous("y2")
+    z = m.continuous("z", lb=0, ub=10)
+    m.subject_to(x1 + x2 - z == 0)  # block A {x1, x2}, input z (kept)
+    m.subject_to(x1 - x2 - 1 == 0)
+    m.subject_to(y1 + y2 - x1 == 0)  # block B {y1, y2}, input x1 (A's variable)
+    m.subject_to(y1 - y2 + x1 == 0)
+    m.minimize((z - 3) ** 2 + y1**2)
+    return m
+
+
+def test_coupled_cyclic_block_is_declined_not_crashed():
+    """RC6: block B's input x1 is eliminated by block A.  Chaining block
+    substitutions is out of scope, so B must be left in place (declined) rather
+    than crashing on a missing input; block A is still eliminated."""
+    el = eliminate_implicit(_coupled_cyclic_blocks())
+    assert set(el.eliminated) == {"x1", "x2"}  # A eliminated, B retained
+    reduced_names = {v.name for v in el.reduced_model._variables}
+    assert {"y1", "y2", "z"} <= reduced_names  # B's variables survive
+
+
+def test_coupled_cyclic_block_recovers_eliminated_block():
+    """RC6: recover() reconstructs block A's variables from a kept point, reading
+    inputs from the accumulated dict."""
+    el = eliminate_implicit(_coupled_cyclic_blocks())
+    full = el.recover({"z": 3.0, "y1": 0.0, "y2": 2.0})
+    assert full["x1"] == pytest.approx(2.0, abs=1e-6)  # x1 = (z + 1) / 2
+    assert full["x2"] == pytest.approx(1.0, abs=1e-6)  # x2 = (z - 1) / 2
