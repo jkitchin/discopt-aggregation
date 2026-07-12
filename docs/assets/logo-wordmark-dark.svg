@@ -1,0 +1,39 @@
+<svg width="960" height="240" viewBox="0 0 960 240" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="discopt-aggregation">
+  <defs>
+    <linearGradient id="bg" x1="24" y1="24" x2="216" y2="216" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#06b6d4"/>
+    </linearGradient>
+  </defs>
+
+  <!-- icon -->
+  <g transform="translate(24,24)">
+    <rect width="192" height="192" rx="42" fill="url(#bg)"/>
+    <g transform="scale(0.375)">
+      <g stroke="#ffffff" stroke-width="14" stroke-linecap="round" fill="none" opacity="0.92">
+        <path d="M150 132 L150 256"/>
+        <path d="M150 256 L150 380"/>
+        <path d="M150 380 L262 380"/>
+        <path d="M150 256 L262 380"/>
+      </g>
+      <g fill="#ffffff">
+        <circle cx="150" cy="132" r="30"/>
+        <circle cx="150" cy="256" r="30"/>
+        <circle cx="150" cy="380" r="30"/>
+        <circle cx="262" cy="380" r="30"/>
+      </g>
+      <g stroke="#ffffff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" fill="none">
+        <path d="M298 256 L372 256"/>
+        <path d="M348 230 L376 256 L348 282"/>
+      </g>
+      <circle cx="418" cy="256" r="44" fill="#ffffff"/>
+      <circle cx="418" cy="256" r="20" fill="#4f46e5"/>
+    </g>
+  </g>
+
+  <!-- wordmark -->
+  <g font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+    <text x="256" y="112" font-size="66" font-weight="700" fill="#f3f4f6">discopt<tspan fill="#4f46e5">-</tspan>aggregation</text>
+    <text x="258" y="164" font-size="30" font-weight="500" fill="#9ca3af" letter-spacing="0.5">variable aggregation for nonlinear optimization</text>
+  </g>
+</svg>

@@ -1,0 +1,76 @@
+site_name: discopt-aggregation
+site_description: Variable aggregation (reduced-space presolve) for nonlinear optimization — a plugin for discopt.
+site_url: https://kitchingroup.cheme.cmu.edu/discopt-aggregation/
+site_author: John Kitchin
+
+repo_url: https://github.com/jkitchin/discopt-aggregation
+repo_name: jkitchin/discopt-aggregation
+edit_uri: edit/main/docs/
+
+copyright: Eclipse Public License 2.0 (EPL-2.0)
+
+theme:
+  name: material
+  logo: assets/icon.svg
+  favicon: assets/favicon.png
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: cyan
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.top
+    - navigation.sections
+    - navigation.footer
+    - content.code.copy
+    - content.action.edit
+    - toc.follow
+    - search.highlight
+    - search.suggest
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - footnotes
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      base_path: ["."]
+
+plugins:
+  - search
+
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Methods: methods.md
+  - Options: options.md
+  - Recovery & diagnostics: recovery.md
+  - Integer aggregation: integer-aggregation.md
+  - Study & benchmarks: study.md
+  - Troubleshooting: troubleshooting.md
+  - API reference: api.md
+  - Changelog: changelog.md

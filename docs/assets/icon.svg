@@ -1,0 +1,37 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="discopt-aggregation icon">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#06b6d4"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+
+  <!-- reduced-space aggregation: a lower-triangular node graph collapsing (left)
+       into a smaller reduced set (right), across an elimination arrow -->
+  <g stroke="#ffffff" stroke-width="14" stroke-linecap="round" fill="none" opacity="0.92">
+    <!-- edges of the full (left) graph -->
+    <path d="M150 132 L150 256"/>
+    <path d="M150 256 L150 380"/>
+    <path d="M150 380 L262 380"/>
+    <path d="M150 256 L262 380"/>
+  </g>
+
+  <!-- full-graph nodes (left) -->
+  <g fill="#ffffff">
+    <circle cx="150" cy="132" r="30"/>
+    <circle cx="150" cy="256" r="30"/>
+    <circle cx="150" cy="380" r="30"/>
+    <circle cx="262" cy="380" r="30"/>
+  </g>
+
+  <!-- elimination arrow -->
+  <g stroke="#ffffff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M298 256 L372 256"/>
+    <path d="M348 230 L376 256 L348 282"/>
+  </g>
+
+  <!-- reduced (right) node, the surviving variable -->
+  <circle cx="418" cy="256" r="44" fill="#ffffff"/>
+  <circle cx="418" cy="256" r="20" fill="#4f46e5"/>
+</svg>

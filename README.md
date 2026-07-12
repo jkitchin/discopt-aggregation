@@ -1,10 +1,22 @@
-# discopt-aggregation
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/logo-wordmark-dark.png">
+    <img alt="discopt-aggregation" src="docs/assets/logo-wordmark.png" width="620">
+  </picture>
+</p>
 
-[![CI](https://github.com/jkitchin/discopt-aggregation/actions/workflows/ci.yml/badge.svg)](https://github.com/jkitchin/discopt-aggregation/actions/workflows/ci.yml)
+<p align="center">
+  <a href="https://github.com/jkitchin/discopt-aggregation/actions/workflows/ci.yml"><img src="https://github.com/jkitchin/discopt-aggregation/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://kitchingroup.cheme.cmu.edu/discopt-aggregation/"><img src="https://img.shields.io/badge/docs-online-4f46e5" alt="Documentation"></a>
+  <a href="https://arxiv.org/abs/2502.13869"><img src="https://img.shields.io/badge/paper-arXiv%3A2502.13869-b31b1b" alt="arXiv"></a>
+  <img src="https://img.shields.io/badge/license-EPL--2.0-green" alt="EPL-2.0">
+</p>
 
 Variable aggregation (reduced-space presolve) for nonlinear optimization —
 a standalone **plugin for [discopt](https://github.com/jkitchin/discopt)** that
 installs into the `discopt.aggregation` namespace.
+
+📖 **[Documentation](https://kitchingroup.cheme.cmu.edu/discopt-aggregation/)**
 
 It implements Naik, Biegler, Bent & Parker, *Variable aggregation for nonlinear
 optimization problems* ([arXiv:2502.13869](https://arxiv.org/abs/2502.13869)):
