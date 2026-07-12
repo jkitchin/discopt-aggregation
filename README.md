@@ -9,7 +9,7 @@
   <a href="https://github.com/jkitchin/discopt-aggregation/actions/workflows/ci.yml"><img src="https://github.com/jkitchin/discopt-aggregation/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://kitchingroup.cheme.cmu.edu/discopt-aggregation/"><img src="https://img.shields.io/badge/docs-online-4f46e5" alt="Documentation"></a>
   <a href="https://arxiv.org/abs/2502.13869"><img src="https://img.shields.io/badge/paper-arXiv%3A2502.13869-b31b1b" alt="arXiv"></a>
-  <img src="https://img.shields.io/badge/license-EPL--2.0-green" alt="EPL-2.0">
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT">
 </p>
 
 Variable aggregation (reduced-space presolve) for nonlinear optimization —
@@ -178,4 +178,4 @@ opt-in/default-off, a worked example per feature, hash-seed-robust tests).
 
 ## License
 
-Eclipse Public License 2.0 (EPL-2.0), matching discopt.
+MIT License. See [LICENSE](LICENSE).

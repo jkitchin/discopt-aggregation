@@ -8,7 +8,7 @@ version = "0.4.1"
 description = "Variable aggregation (reduced-space presolve) plugin for discopt"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "EPL-2.0" }
+license = { text = "MIT" }
 authors = [{ name = "John Kitchin" }]
 keywords = ["optimization", "nonlinear", "presolve", "aggregation", "discopt"]
 classifiers = [

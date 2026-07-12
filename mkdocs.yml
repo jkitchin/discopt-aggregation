@@ -7,7 +7,7 @@ repo_url: https://github.com/jkitchin/discopt-aggregation
 repo_name: jkitchin/discopt-aggregation
 edit_uri: edit/main/docs/
 
-copyright: Eclipse Public License 2.0 (EPL-2.0)
+copyright: MIT License &copy; 2026 John Kitchin
 
 theme:
   name: material
@@ -47,6 +47,11 @@ markdown_extensions:
   - attr_list
   - md_in_html
   - tables
+  # Renders :material-*: / :octicons-*: icon shortcodes (used by the grid cards
+  # on the home page) as inline SVG. Without this they show as literal text.
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - footnotes
   - toc:
       permalink: true
