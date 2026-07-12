@@ -182,7 +182,7 @@ Details and the local-vs-global-solve caveat: `references/study-tools.md`.
 pip install discopt-aggregation          # or: uv pip install -e .  (in the repo)
 python -c "from discopt.aggregation import aggregate, solve; print('ok')"
 ```
-`discopt.aggregation` (requires `discopt >= 0.5`) is a PEP-420 namespace
+`discopt.aggregation` (requires `discopt >= 0.6`) is a PEP-420 namespace
 subpackage that merges into the installed `discopt` package at import time.
 
 This skill itself ships inside the wheel. Claude Code does not auto-discover

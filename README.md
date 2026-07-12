@@ -42,10 +42,16 @@ print(res.x)                              # {'x': -0.5, 'y': 0.5}  (y recovered)
 ## Installation
 
 ```bash
-uv pip install -e .            # or: pip install -e .
+pip install discopt-aggregation          # from PyPI
 ```
 
-Requires `discopt >= 0.5`. The plugin is a `discopt.aggregation` **namespace
+Or from a checkout for development:
+
+```bash
+uv pip install -e ".[dev]"               # or: pip install -e ".[dev]"
+```
+
+Requires `discopt >= 0.6`. The plugin is a `discopt.aggregation` **namespace
 package**: it merges into the installed `discopt` package at import time. This
 needs `discopt/__init__.py` to extend its search path, i.e. to contain:
 
@@ -53,7 +59,7 @@ needs `discopt/__init__.py` to extend its search path, i.e. to contain:
 __path__ = __import__("pkgutil").extend_path(__path__, __name__)
 ```
 
-discopt 0.5+ includes this line. (If you use an older discopt, add it once.)
+discopt 0.6+ includes this line. (If you use an older discopt, add it once.)
 
 ## Claude skill
 

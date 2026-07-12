@@ -1,0 +1,92 @@
+name: publish
+
+# Build the sdist + wheel and upload to PyPI (or TestPyPI) using OIDC trusted
+# publishing — no API tokens are stored. A GitHub release publishes to PyPI; the
+# manual workflow_dispatch path (target=testpypi) is a dry run.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Where to upload"
+        required: true
+        default: testpypi
+        type: choice
+        options:
+          - testpypi
+          - pypi
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Build sdist + wheel
+        run: |
+          rm -rf dist
+          uv build
+
+      - name: Check artifacts
+        run: uvx twine check dist/*
+
+      - name: Verify the wheel ships only discopt/aggregation
+        run: |
+          python - <<'PY'
+          import glob, zipfile
+          (whl,) = glob.glob("dist/discopt_aggregation-*.whl")
+          names = zipfile.ZipFile(whl).namelist()
+          top = {n.split("/", 1)[0] for n in names if not n.startswith("discopt_aggregation-")}
+          assert top == {"discopt"}, f"unexpected top-level entries: {top}"
+          assert "discopt/__init__.py" not in names, "wheel must NOT ship discopt/__init__.py"
+          assert any(n.startswith("discopt/aggregation/") for n in names), "missing discopt/aggregation/**"
+          assert any(n.startswith("discopt/aggregation/skill/") for n in names), "missing skill assets"
+          print("wheel layout OK:", whl)
+          PY
+
+      - name: Upload built distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish-testpypi:
+    # Dry run: manual dispatch with target=testpypi.
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'testpypi'
+    runs-on: ubuntu-latest
+    environment: testpypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  publish-pypi:
+    # Real publish: on a GitHub release, or manual dispatch with target=pypi.
+    needs: build
+    if: >-
+      github.event_name == 'release' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.target == 'pypi')
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

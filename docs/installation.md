@@ -1,10 +1,16 @@
 # Installation
 
 `discopt-aggregation` is a **namespace plugin** (PEP 420) that merges into the
-`discopt` package at import time. It requires `discopt >= 0.5`.
+`discopt` package at import time. It requires `discopt >= 0.6`.
 
 ```bash
-uv pip install -e .            # or: pip install -e .
+pip install discopt-aggregation          # from PyPI
+```
+
+For development, install from a checkout instead:
+
+```bash
+uv pip install -e ".[dev]"               # or: pip install -e ".[dev]"
 ```
 
 The plugin packages only `discopt.aggregation` — never `discopt` — so it never
@@ -15,7 +21,7 @@ extend its search path:
 __path__ = __import__("pkgutil").extend_path(__path__, __name__)
 ```
 
-discopt 0.5+ ships this line. (If you use an older discopt, add it once.)
+discopt 0.6+ ships this line. (If you use an older discopt, add it once.)
 
 Solve-based use additionally needs `pounce` (`pounce-solver`), the local Rust NLP
 solver discopt drives.

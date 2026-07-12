@@ -20,7 +20,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Mathematics",
 ]
 dependencies = [
-    "discopt>=0.5",
+    "discopt>=0.6",
     "numpy>=1.24",
     "scipy>=1.10",
 ]
