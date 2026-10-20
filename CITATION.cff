@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata below."
+title: "discopt-aggregation"
+type: software
+authors:
+  - family-names: Kitchin
+    given-names: John R.
+    orcid: "https://orcid.org/0000-0003-2625-9232"
+    affiliation: Carnegie Mellon University
+repository-code: "https://github.com/jkitchin/discopt-aggregation"
+version: "0.4.1"
+date-released: "2026-10-20"
+license: MIT
+abstract: "Variable aggregation (reduced-space presolve) for nonlinear optimization, a discopt plugin implementing Naik et al. (arXiv:2502.13869)."
+keywords: [nonlinear optimization, presolve]
